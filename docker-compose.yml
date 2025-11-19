@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  f1-tv:
+    image: ${DOCKER_USERNAME}/f1-tv:latest
+    container_name: f1-tv-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - f1-network
+
+networks:
+  f1-network:
+    driver: bridge
