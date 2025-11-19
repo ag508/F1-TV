@@ -93,14 +93,22 @@ The app will be available at `http://localhost:5173`
 docker-compose up -d
 ```
 
-The app will be available at `http://localhost:3000`
+The app will be available at `http://localhost:3001`
+
+**Note:** By default, the app runs on port 3001 (mapped from container port 3000). To use a different port, edit `docker-compose.yml` line 8:
+```yaml
+ports:
+  - "YOUR_PORT:3000"  # Change YOUR_PORT to any available port
+```
 
 ### Build Docker Image Manually
 
 ```bash
 docker build -t f1-tv:latest .
-docker run -p 3000:3000 f1-tv:latest
+docker run -p 3001:3000 f1-tv:latest
 ```
+
+**Custom Port:** Change `3001` to any available port on your host.
 
 ## GitHub + Docker Hub CI/CD Setup
 

@@ -810,8 +810,11 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Helper function to generate stream URL
   // Using FFmpeg restream endpoint with mpegts.js
   const getStreamUrl = (channelId) => {
+    // Use current window location to support any port
+    const baseUrl = window.location.origin;
+
     // FFmpeg restream endpoint (MPEG-TS output)
-    const restreamUrl = `http://localhost:3000/restream/${channelId}?` +
+    const restreamUrl = `${baseUrl}/restream/${channelId}?` +
       `server=${encodeURIComponent(XSTREAM_CONFIG.server)}&` +
       `username=${encodeURIComponent(XSTREAM_CONFIG.username)}&` +
       `password=${encodeURIComponent(XSTREAM_CONFIG.password)}`;

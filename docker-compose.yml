@@ -5,7 +5,7 @@ services:
     image: ${DOCKER_USERNAME}/f1-tv:latest
     container_name: f1-tv-app
     ports:
-      - "3000:3000"
+      - "3001:3000"  # HOST_PORT:CONTAINER_PORT - Change 3001 to your desired port
     environment:
       - NODE_ENV=production
       - PORT=3000
