@@ -802,9 +802,9 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Xstream IPTV Configuration
   // IMPORTANT: Update these with your actual Xstream credentials
   const XSTREAM_CONFIG = {
-    server: "http://world-panel.co:8080",  // Your Xstream server IP/domain
-    username: "maurizioespano",             // Your username
-    password: "gfbjjj7jr6eb7j"              // Your password
+    server: "http://germanyservers1.net:8080",  // Your Xstream server IP/domain
+    username: "emregencer",                      // Your username
+    password: "yp4fJzKoQp"                       // Your password
   };
 
   // Helper function to generate stream URL
@@ -824,12 +824,9 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
 
   // Available F1 Channels from your Xstream provider
   // NOTE: Using mpegts type with mpegts.js library for playback
+  // UK Sky Sports F1 channels with English commentary
   const liveStreams = [
-    { id: 90, title: "Sky Sports F1 HD", source: "Sky Sports", quality: "HD", bitrate: "Live", url: getStreamUrl(90), status: "ONLINE", type: "mpegts" },
-    { id: 296, title: "Sky Sport F1 FHD", source: "Sky Sports", quality: "FHD", bitrate: "Live", url: getStreamUrl(296), status: "ONLINE", type: "mpegts" },
-    { id: 1937, title: "Sky F1 SD", source: "Sky Sports", quality: "SD", bitrate: "Live", url: getStreamUrl(1937), status: "ONLINE", type: "mpegts" },
-    { id: 21218, title: "ES - Dazn F1", source: "DAZN", quality: "HD", bitrate: "Live", url: getStreamUrl(21218), status: "ONLINE", type: "mpegts" },
-    { id: 57126, title: "DE: Sky Sport F1 HD", source: "Sky DE", quality: "HD", bitrate: "Live", url: getStreamUrl(57126), status: "ONLINE", type: "mpegts" },
+    { id: 108714, title: "UK: Sky Sports F1 UHD", source: "Sky Sports UK", quality: "UHD", bitrate: "Live", url: getStreamUrl(108714), status: "ONLINE", type: "mpegts" },
   ];
 
   const archiveStreams = [
