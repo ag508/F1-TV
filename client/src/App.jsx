@@ -267,8 +267,9 @@ const VideoPlayer = ({ src, type }) => {
     });
 
     player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-      console.error('MPEG-TS error:', errorType, errorDetail, errorInfo);
-      setError(`Stream error: ${errorType}. Please try another channel.`);
+      console.error('MPEG-TS error:', { errorType, errorDetail, errorInfo });
+      console.error('Stream URL:', src);
+      setError(`Stream error: ${errorType} (${errorDetail}). Check server logs for details.`);
       setLoading(false);
     });
 
@@ -799,34 +800,45 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
 
   const isPast = race && new Date(`${race.date}T${race.time}`) < new Date();
 
-  // Xstream IPTV Configuration
-  // IMPORTANT: Update these with your actual Xstream credentials
-  const XSTREAM_CONFIG = {
-    server: "http://germanyservers1.net:8080",  // Your Xstream server IP/domain
-    username: "emregencer",                      // Your username
-    password: "yp4fJzKoQp"                       // Your password
-  };
-
-  // Helper function to generate stream URL
+  // Helper function to generate stream URL with custom provider
   // Using FFmpeg restream endpoint with mpegts.js
-  const getStreamUrl = (channelId) => {
+  const getStreamUrl = (channelId, server, username, password) => {
     // Use current window location to support any port
     const baseUrl = window.location.origin;
 
     // FFmpeg restream endpoint (MPEG-TS output)
     const restreamUrl = `${baseUrl}/restream/${channelId}?` +
-      `server=${encodeURIComponent(XSTREAM_CONFIG.server)}&` +
-      `username=${encodeURIComponent(XSTREAM_CONFIG.username)}&` +
-      `password=${encodeURIComponent(XSTREAM_CONFIG.password)}`;
+      `server=${encodeURIComponent(server)}&` +
+      `username=${encodeURIComponent(username)}&` +
+      `password=${encodeURIComponent(password)}`;
 
     return restreamUrl;
   };
 
   // Available F1 Channels from your Xstream provider
   // NOTE: Using mpegts type with mpegts.js library for playback
-  // UK Sky Sports F1 channels with English commentary
+  // UK Sky Sports F1 channels with English commentary - tested and verified working
   const liveStreams = [
-    { id: 108714, title: "UK: Sky Sports F1 UHD", source: "Sky Sports UK", quality: "UHD", bitrate: "Live", url: getStreamUrl(108714), status: "ONLINE", type: "mpegts" },
+    {
+      id: 108714,
+      title: "UK: Sky Sports F1 UHD",
+      source: "Sky Sports UK",
+      quality: "UHD",
+      bitrate: "Live",
+      url: getStreamUrl(108714, "http://germanyservers1.net:8080", "emregencer", "yp4fJzKoQp"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
+    {
+      id: 29674,
+      title: "UK: Sky Sports F1 VIP",
+      source: "Sky Sports UK",
+      quality: "HD",
+      bitrate: "Live",
+      url: getStreamUrl(29674, "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
   ];
 
   const archiveStreams = [
@@ -857,7 +869,7 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
             <p>
               {isPast
                 ? "Archives sourced from f1live.dpdns.org"
-                : "Live signals proxied. 'Sky Sports F1' uses a placeholder signal for demo."}
+                : "Live UK Sky Sports F1 stream with English commentary"}
             </p>
           </div>
 
