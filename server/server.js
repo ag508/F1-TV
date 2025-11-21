@@ -83,11 +83,15 @@ app.get('/restream/:channelId', (req, res) => {
     return res.status(400).send('Missing required parameters: server, username, password');
   }
 
+  // Check if this is an SD transcode request
+  const isSD = channelId.endsWith('-sd');
+  const actualChannelId = isSD ? channelId.replace('-sd', '') : channelId;
+
   // Build source URL
-  const sourceUrl = `${server}/live/${username}/${password}/${channelId}.m3u8`;
+  const sourceUrl = `${server}/live/${username}/${password}/${actualChannelId}.m3u8`;
   const streamKey = `${username}-${channelId}`;
 
-  console.log(`[Restream] Request for channel ${channelId}`);
+  console.log(`[Restream] Request for channel ${channelId}${isSD ? ' (SD transcode)' : ''}`);
 
   // Check if stream is already running
   if (activeStreams.has(streamKey)) {
@@ -125,18 +129,43 @@ app.get('/restream/:channelId', (req, res) => {
   } else {
     console.log(`[Restream] Starting new FFmpeg process for ${streamKey}`);
 
-    // Start FFmpeg process to restream
-    const ffmpeg = spawn('ffmpeg', [
-      '-re',                 // Read input at native frame rate
-      '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
-      '-i', sourceUrl,
-      '-c:v', 'copy',        // Copy video codec (no transcoding)
-      '-c:a', 'aac',         // Transcode audio to AAC (browser-compatible)
-      '-ac', '2',            // Downmix to stereo (more compatible)
-      '-b:a', '192k',        // Audio bitrate
-      '-f', 'mpegts',        // Output as MPEG-TS
-      'pipe:1'               // Output to stdout
-    ]);
+    // Build FFmpeg arguments based on quality
+    let ffmpegArgs;
+    if (isSD) {
+      // SD: Transcode video to lower resolution and bitrate
+      ffmpegArgs = [
+        '-re',                 // Read input at native frame rate
+        '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
+        '-i', sourceUrl,
+        '-c:v', 'libx264',     // Transcode video to H.264
+        '-preset', 'veryfast', // Fast encoding
+        '-s', '854x480',       // SD resolution (480p)
+        '-b:v', '800k',        // Low video bitrate for SD
+        '-maxrate', '1M',
+        '-bufsize', '2M',
+        '-c:a', 'aac',         // Transcode audio to AAC
+        '-ac', '2',            // Stereo audio
+        '-b:a', '128k',        // Lower audio bitrate for SD
+        '-f', 'mpegts',        // Output as MPEG-TS
+        'pipe:1'               // Output to stdout
+      ];
+    } else {
+      // HD/UHD: Copy video, only transcode audio
+      ffmpegArgs = [
+        '-re',                 // Read input at native frame rate
+        '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
+        '-i', sourceUrl,
+        '-c:v', 'copy',        // Copy video codec (no transcoding)
+        '-c:a', 'aac',         // Transcode audio to AAC (browser-compatible)
+        '-ac', '2',            // Downmix to stereo (more compatible)
+        '-b:a', '192k',        // Audio bitrate
+        '-f', 'mpegts',        // Output as MPEG-TS
+        'pipe:1'               // Output to stdout
+      ];
+    }
+
+    // Start FFmpeg process
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
     const streamData = {
       ffmpeg: ffmpeg,

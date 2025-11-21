@@ -826,25 +826,73 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Available F1 Channels from your Xstream provider
   // NOTE: Using mpegts type with mpegts.js library for playback
   // UK Sky Sports F1 channels with English commentary - tested and verified working
-  // Only 2 quality options available with English commentary
+  // Multiple quality options and providers for maximum redundancy
   const liveStreams = [
+    // UHD Quality
     {
       id: 108714,
       title: "UK: Sky Sports F1 UHD",
-      source: "Sky Sports UK",
+      source: "germanyservers1.net",
       quality: "UHD",
       bitrate: "Live",
       url: getStreamUrl(108714, "http://germanyservers1.net:8080", "emregencer", "yp4fJzKoQp"),
       status: "ONLINE",
       type: "mpegts"
     },
+
+    // HD Quality - Primary
     {
       id: 29674,
       title: "UK: Sky Sports F1 HD",
-      source: "Sky Sports UK",
+      source: "nopemtayvwj.top",
       quality: "HD",
       bitrate: "Live",
       url: getStreamUrl(29674, "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
+
+    // HD Quality - Backup Providers
+    {
+      id: 133543,
+      title: "UK: Sky Sports F1 HD (Backup 1)",
+      source: "mblacks1.xyz",
+      quality: "HD",
+      bitrate: "Live",
+      url: getStreamUrl(133543, "http://mblacks1.xyz:8080", "hdkaptantv6782", "kptn@4866782"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
+    {
+      id: 47865,
+      title: "UK: Sky Sports F1 HD (Backup 2)",
+      source: "kstv.us",
+      quality: "HD",
+      bitrate: "Live",
+      url: getStreamUrl(47865, "http://kstv.us:8080", "pdpv38DNVr", "0949989823"),
+      status: "ONLINE",
+      type: "mpegts",
+      note: "Takes longer to start"
+    },
+    {
+      id: 336744,
+      title: "UK: Sky Sports F1 HD (Backup 3)",
+      source: "xxx.266227.xyz",
+      quality: "HD",
+      bitrate: "Live",
+      url: getStreamUrl(336744, "http://xxx.266227.xyz:80", "mesut.demir", "LdEHUj7H4M"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
+
+    // SD Quality - Server-side transcoded for slow connections
+    {
+      id: "29674-sd",
+      title: "UK: Sky Sports F1 SD (Low Bandwidth)",
+      source: "nopemtayvwj.top",
+      quality: "SD",
+      bitrate: "Live",
+      url: getStreamUrl("29674-sd", "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
       status: "ONLINE",
       type: "mpegts"
     },

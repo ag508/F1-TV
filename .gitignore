@@ -53,6 +53,7 @@ coverage/
 find_redundant_links.py
 test_accounts.py
 test_all_accounts.py
+comprehensive_search.py
 Xstream_Users.txt
 Xstream-ew2.txt
 Xstream-New.txt
