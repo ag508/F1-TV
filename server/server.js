@@ -130,7 +130,10 @@ app.get('/restream/:channelId', (req, res) => {
       '-re',                 // Read input at native frame rate
       '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
       '-i', sourceUrl,
-      '-c', 'copy',          // Copy codec (no transcoding)
+      '-c:v', 'copy',        // Copy video codec (no transcoding)
+      '-c:a', 'aac',         // Transcode audio to AAC (browser-compatible)
+      '-ac', '2',            // Downmix to stereo (more compatible)
+      '-b:a', '192k',        // Audio bitrate
       '-f', 'mpegts',        // Output as MPEG-TS
       'pipe:1'               // Output to stdout
     ]);
