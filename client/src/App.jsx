@@ -826,7 +826,7 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Available F1 Channels from your Xstream provider
   // NOTE: Using mpegts type with mpegts.js library for playback
   // UK Sky Sports F1 channels with English commentary - tested and verified working
-  // Multiple quality options to reduce buffering
+  // Only 2 quality options available with English commentary
   const liveStreams = [
     {
       id: 108714,
@@ -839,28 +839,8 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
       type: "mpegts"
     },
     {
-      id: 115514,
-      title: "UK: Sky Sports F1 HD",
-      source: "Sky Sports UK",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(115514, "http://germanyservers1.net:8080", "emregencer", "yp4fJzKoQp"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-    {
-      id: 61400,
-      title: "UK: Sky Sports F1 720P",
-      source: "Sky Sports UK",
-      quality: "720P",
-      bitrate: "Live",
-      url: getStreamUrl(61400, "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-    {
       id: 29674,
-      title: "UK: Sky Sports F1 VIP HD",
+      title: "UK: Sky Sports F1 HD",
       source: "Sky Sports UK",
       quality: "HD",
       bitrate: "Live",
