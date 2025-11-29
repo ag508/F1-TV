@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, MapPin, Play, Clock, Trophy, Tv, AlertCircle, X, RefreshCw, Server, ChevronRight, Signal, Battery, Info, History, Film, Timer, BarChart3, Youtube, Users } from 'lucide-react';
+import { Calendar, MapPin, Play, Clock, Trophy, Tv, AlertCircle, X, RefreshCw, Server, ChevronRight, Signal, Battery, Info, History, Film, Timer, BarChart3, Youtube, Users, Activity, Gauge } from 'lucide-react';
 import mpegts from 'mpegts.js';
 
 // --- Styles & Fonts ---
@@ -129,28 +129,69 @@ const GlobalStyles = () => (
 
 // Official Wikimedia Layouts - Comprehensive circuit ID mapping
 const CIRCUIT_IMAGES = {
+  // Bahrain
   "bahrain": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Bahrain_International_Circuit--Grand_Prix_Layout.svg/640px-Bahrain_International_Circuit--Grand_Prix_Layout.svg.png",
-  "jeddah": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Jeddah_Street_Circuit_2021.svg/640px-Jeddah_Street_Circuit_2021.svg.png",
-  "albert_park": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Albert_Park_Circuit_2021.svg/640px-Albert_Park_Circuit_2021.svg.png",
-  "suzuka": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Suzuka_circuit_map_2005.svg/640px-Suzuka_circuit_map_2005.svg.png",
-  "shanghai": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Shanghai_International_Racing_Circuit_track_map.svg/640px-Shanghai_International_Racing_Circuit_track_map.svg.png",
-  "miami": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Miami_International_Autodrome_2022.svg/640px-Miami_International_Autodrome_2022.svg.png",
-  "imola": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Imola_2009.svg/640px-Imola_2009.svg.png",
-  "monaco": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Circuit_de_Monaco.svg/640px-Circuit_de_Monaco.svg.png",
-  "catalunya": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Catalunya_2021.svg/640px-Catalunya_2021.svg.png",
-  "villeneuve": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Circuit_Gilles_Villeneuve_2002.svg/640px-Circuit_Gilles_Villeneuve_2002.svg.png",
-  "red_bull_ring": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Red_Bull_Ring_2022.svg/640px-Red_Bull_Ring_2022.svg.png",
-  "silverstone": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Silverstone_Circuit_2020.svg/640px-Silverstone_Circuit_2020.svg.png",
-  "hungaroring": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Hungaroring_2003.svg/640px-Hungaroring_2003.svg.png",
-  "spa": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Spa-Francorchamps_of_Belgium_2007.svg/640px-Spa-Francorchamps_of_Belgium_2007.svg.png",
-  "zandvoort": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/Circuit_Zandvoort_2020.svg/640px-Circuit_Zandvoort_2020.svg.png",
-  "monza": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map.svg/640px-Monza_track_map.svg.png",
-  "baku": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Baku_Formula_One_circuit_map.svg/640px-Baku_Formula_One_circuit_map.svg.png",
-  "marina_bay": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Marina_Bay_Street_Circuit_2023.svg/640px-Marina_Bay_Street_Circuit_2023.svg.png",
-  "americas": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Austin_circuit.svg/640px-Austin_circuit.svg.png",
-  "rodriguez": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg/640px-Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg.png",
-  "interlagos": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Circuit_Interlagos_1990.svg/640px-Circuit_Interlagos_1990.svg.png",
-  // Las Vegas - All possible variations (using direct SVG URL)
+  // Saudi Arabia
+  "jeddah": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
+  "saudi_arabia": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
+  // Australia
+  "albert_park": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
+  "australia": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
+  // Japan
+  "suzuka": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
+  "japan": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
+  // China
+  "shanghai": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
+  "china": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
+  // Miami
+  "miami": "https://upload.wikimedia.org/wikipedia/commons/b/be/2022_F1_CourseLayout_Miami.svg",
+  // Emilia Romagna
+  "imola": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
+  "emilia_romagna": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
+  // Monaco
+  "monaco": "https://upload.wikimedia.org/wikipedia/commons/5/56/Circuit_Monaco.svg",
+  // Canada
+  "villeneuve": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
+  "canada": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
+  // Spain
+  "catalunya": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  "spanish": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  "spain": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  // Austria
+  "red_bull_ring": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
+  "austria": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
+  // Great Britain
+  "silverstone": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
+  "britain": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
+  // Hungary
+  "hungaroring": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
+  "hungary": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
+  // Belgium
+  "spa": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
+  "belgium": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
+  // Netherlands
+  "zandvoort": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
+  "dutch": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
+  // Italy
+  "monza": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
+  "italy": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
+  // Azerbaijan
+  "baku": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
+  "azerbaijan": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
+  // Singapore
+  "marina_bay": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
+  "singapore": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
+  // USA (Austin)
+  "americas": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  "usa": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  "united_states": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  // Mexico
+  "rodriguez": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
+  "mexico": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
+  // Brazil
+  "interlagos": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
+  "brazil": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
+  // Las Vegas
   "vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "las_vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "las-vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
@@ -158,9 +199,11 @@ const CIRCUIT_IMAGES = {
   "las vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "lasvegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   // Qatar
-  "losail": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Losail_International_Circuit_2023.svg/640px-Losail_International_Circuit_2023.svg.png",
+  "losail": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
+  "qatar": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
   // Abu Dhabi
-  "yas_marina": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Yas_Marina_Circuit_2021.svg/640px-Yas_Marina_Circuit_2021.svg.png"
+  "yas_marina": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg",
+  "abu_dhabi": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg"
 };
 
 const OFFICIAL_PLAYLIST_ID = "PLfoNZDHitwjUleAqrgG-OC5gVAL2mv-Mh";
@@ -213,12 +256,209 @@ const CircuitMap = ({ circuitId }) => {
   );
 };
 
+// --- Live Race Tracker Component ---
+const LiveRaceTracker = ({ circuitId }) => {
+  const [positions, setPositions] = useState({});
+  const [telemetry, setTelemetry] = useState({});
+  const [connected, setConnected] = useState(false);
+  const canvasRef = useRef(null);
+
+  // Track geometry (Mock simple loop for visualization if no SVG path)
+  // Ideally we would parse the SVG path from the circuit image
+
+  useEffect(() => {
+    // Connect to Python WebSocket
+    const ws = new WebSocket(`ws://${window.location.hostname}:8765`);
+
+    ws.onopen = () => {
+      console.log('Connected to LiveF1 Service');
+      setConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'init') {
+        setPositions(msg.data.positions || {});
+        setTelemetry(msg.data.telemetry || {});
+      } else if (msg.type === 'positions') {
+        setPositions(prev => {
+          const next = { ...prev };
+          msg.data.forEach(update => {
+            next[update.driver] = update.pos;
+          });
+          return next;
+        });
+      } else if (msg.type === 'telemetry') {
+        setTelemetry(prev => {
+          const next = { ...prev };
+          msg.data.forEach(update => {
+            next[update.driver] = update.telemetry;
+          });
+          return next;
+        });
+      }
+    };
+
+    ws.onclose = () => setConnected(false);
+
+    return () => ws.close();
+  }, []);
+
+  // Auto-Scale Logic to fit cars in the container
+  // Since we don't have the track map coordinate boundaries, we dynamically calculate them
+  // based on the car positions we receive. This "auto-fits" the track to the view.
+  const getScaledPosition = (x, y) => {
+    const vals = Object.values(positions);
+    if (vals.length === 0) return { x: 50, y: 50 };
+
+    const xs = vals.map(p => p.x);
+    const ys = vals.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    // Add some padding (10%)
+    const paddingX = (maxX - minX) * 0.1 || 1000;
+    const paddingY = (maxY - minY) * 0.1 || 1000;
+
+    const rangeX = (maxX - minX) + paddingX * 2;
+    const rangeY = (maxY - minY) + paddingY * 2;
+
+    // Avoid division by zero
+    if (rangeX === 0 || rangeY === 0) return { x: 50, y: 50 };
+
+    // Scale to percentage (0-100)
+    // Note: F1 coordinates usually have Y inverted relative to screen (or not, depends on track)
+    // We'll assume standard cartesian and flip Y for CSS (top is 0)
+    return {
+      x: ((x - (minX - paddingX)) / rangeX) * 100,
+      y: 100 - ((y - (minY - paddingY)) / rangeY) * 100
+    };
+  };
+
+  const sortedDrivers = useMemo(() => {
+     // Sort by position if available, otherwise just stable sort by number
+     return Object.keys(telemetry).sort((a, b) => {
+        // Here we could use a proper position field if the API provided it
+        return parseInt(a) - parseInt(b);
+     });
+  }, [telemetry]);
+
+  return (
+    <div className="bg-black/80 backdrop-blur-md rounded-xl border border-[#333] flex flex-col md:flex-row h-[400px] overflow-hidden">
+
+      {/* Track Map Visualization Area (Left - 60%) */}
+      <div className="flex-1 relative bg-[#151515] border-r border-[#333] min-h-[250px]">
+         <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+            <h3 className="text-white font-bold flex items-center gap-2">
+               <Activity className="w-4 h-4 text-[#ff1801]" /> Live Track Map
+            </h3>
+            <div className={`text-[10px] font-mono px-2 py-0.5 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+               {connected ? 'LIVE' : 'OFFLINE'}
+            </div>
+         </div>
+
+         {/* Track Outline (Circuit Image as Background Reference) */}
+         <div className="absolute inset-4 opacity-20 pointer-events-none">
+             <CircuitMap circuitId={circuitId} />
+         </div>
+
+         {/* Car Dots Layer */}
+         <div className="absolute inset-4 relative">
+             {Object.entries(positions).map(([driverNum, pos]) => {
+                const { x, y } = getScaledPosition(pos.x, pos.y);
+                const color = '#ff1801'; // Default team color (could be mapped)
+
+                return (
+                   <div
+                      key={driverNum}
+                      className="absolute w-3 h-3 rounded-full border border-white transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300 ease-linear shadow-[0_0_8px_rgba(255,255,255,0.5)] z-20 flex items-center justify-center group cursor-pointer"
+                      style={{
+                         left: `${x}%`,
+                         top: `${y}%`,
+                         backgroundColor: color
+                      }}
+                   >
+                      <span className="text-[6px] font-bold text-white">{driverNum}</span>
+
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black border border-[#333] px-2 py-1 rounded text-xs whitespace-nowrap hidden group-hover:block z-30">
+                         Driver {driverNum}
+                      </div>
+                   </div>
+                );
+             })}
+
+             {Object.keys(positions).length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs">
+                   <div className="text-center">
+                      <Gauge className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      Waiting for car positions...
+                   </div>
+                </div>
+             )}
+         </div>
+      </div>
+
+      {/* Telemetry List (Right - 40%) */}
+      <div className="w-full md:w-5/12 lg:w-4/12 flex flex-col bg-[#101010]">
+          <div className="p-3 border-b border-[#333] bg-[#1a1a1a]">
+             <h4 className="text-xs font-bold uppercase text-gray-400">Live Telemetry</h4>
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+             {sortedDrivers.map((driverNum) => {
+                const data = telemetry[driverNum] || {};
+                return (
+                  <div key={driverNum} className="flex items-center justify-between bg-[#151515] p-2 rounded border border-[#333] hover:border-[#ff1801] transition-colors">
+                     <div className="flex items-center gap-3">
+                        <span className="font-mono text-lg font-bold text-white w-6 text-center">{driverNum}</span>
+                        <div className="h-6 w-px bg-[#333]"></div>
+                     </div>
+
+                     <div className="grid grid-cols-3 gap-2 text-center flex-1">
+                        <div>
+                           <div className="text-[8px] text-gray-600 uppercase">KPH</div>
+                           <div className="text-xs font-mono font-bold text-[#ff1801]">{data.speed || 0}</div>
+                        </div>
+                        <div>
+                           <div className="text-[8px] text-gray-600 uppercase">RPM</div>
+                           <div className="text-xs font-mono text-white">{data.rpm || 0}</div>
+                        </div>
+                        <div>
+                           <div className="text-[8px] text-gray-600 uppercase">Gear</div>
+                           <div className="text-xs font-mono font-bold text-yellow-500">{data.gear || '-'}</div>
+                        </div>
+                     </div>
+                  </div>
+                );
+             })}
+
+             {sortedDrivers.length === 0 && (
+                 <div className="p-8 text-center text-gray-600 text-xs">
+                    No telemetry data available
+                 </div>
+             )}
+          </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Video Player Component ---
-const VideoPlayer = ({ src, type }) => {
+const VideoPlayer = ({ src, type, onStateChange }) => {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Propagate state changes to parent (PlayerModal)
+  useEffect(() => {
+    if (onStateChange) {
+      onStateChange({ loading, error });
+    }
+  }, [loading, error, onStateChange]);
 
   // Handle MPEG-TS streams with mpegts.js
   const mpegtsPlayerRef = useRef(null);
@@ -287,11 +527,25 @@ const VideoPlayer = ({ src, type }) => {
       console.log('Autoplay prevented:', e);
     });
 
-    // Cleanup
+    // Cleanup - AGGRESSIVE MEMORY MANAGEMENT
     return () => {
       if (mpegtsPlayerRef.current) {
-        mpegtsPlayerRef.current.destroy();
+        console.log('Destroying MPEG-TS player instance');
+        try {
+          mpegtsPlayerRef.current.pause();
+          mpegtsPlayerRef.current.unload();
+          mpegtsPlayerRef.current.detachMediaElement();
+          mpegtsPlayerRef.current.destroy();
+        } catch (e) {
+          console.warn('Error destroying mpegts player:', e);
+        }
         mpegtsPlayerRef.current = null;
+      }
+
+      // Also clear the video element source to stop any background downloading
+      if (videoRef.current) {
+        videoRef.current.removeAttribute('src');
+        videoRef.current.load();
       }
     };
   }, [src, type]);
@@ -712,6 +966,11 @@ const Hero = ({ race, onWatch }) => {
           </div>
         </div>
       </div>
+
+      {/* New Live Telemetry Section (Bottom Row) */}
+      <div className="lg:col-span-12 border-t border-[#333] bg-black/40 backdrop-blur-sm p-4">
+         <LiveRaceTracker circuitId={race.Circuit.circuitId} />
+      </div>
     </section>
   );
 };
@@ -962,6 +1221,15 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
 };
 
 const PlayerModal = ({ stream, onClose }) => {
+  // Hoist state from VideoPlayer to Modal to control the badge
+  // Note: ideally we would move the state up, but for now we will infer it or just pass callbacks
+  // A simpler way without refactoring everything: The VideoPlayer handles the loading state logic internally
+  // but we can't easily access it here.
+  // Refactor: Move loading/error state UP to PlayerModal
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
   if (!stream) return null;
 
   return (
@@ -969,9 +1237,19 @@ const PlayerModal = ({ stream, onClose }) => {
       <div className="flex items-center justify-between p-4 bg-[#101010] border-b border-[#333]">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            {stream.type !== 'youtube' && <div className="live-indicator"></div>}
-            <span className="text-[#ff1801] font-bold text-xs md:text-sm tracking-wider">
-              {stream.type === 'youtube' ? 'HIGHLIGHTS' : 'LIVE'}
+            {stream.type !== 'youtube' && (
+               <div className={`w-2 h-2 rounded-full ${
+                  loading ? 'bg-yellow-500 animate-pulse' :
+                  error ? 'bg-gray-500' :
+                  'bg-[#ff1801] shadow-[0_0_10px_rgba(255,24,1,0.7)] animate-pulse'
+                }`}></div>
+            )}
+            <span className={`${
+              loading ? 'text-yellow-500' :
+              error ? 'text-gray-500' :
+              'text-[#ff1801]'
+            } font-bold text-xs md:text-sm tracking-wider`}>
+              {loading ? 'BUFFERING' : error ? 'OFFLINE' : (stream.type === 'youtube' ? 'HIGHLIGHTS' : 'LIVE')}
             </span>
           </div>
           <div className="w-px h-4 bg-[#333]"></div>
@@ -983,7 +1261,15 @@ const PlayerModal = ({ stream, onClose }) => {
       </div>
       <div className="flex-1 relative flex items-center justify-center bg-black">
         <div className="w-full max-w-6xl aspect-video bg-black shadow-2xl border border-[#222]">
-          <VideoPlayer src={stream.url} type={stream.type} />
+          <VideoPlayer
+            src={stream.url}
+            type={stream.type}
+            onStateChange={(state) => {
+              setLoading(state.loading);
+              if (state.error) setError(state.error);
+              else setError(null);
+            }}
+          />
         </div>
       </div>
     </div>
