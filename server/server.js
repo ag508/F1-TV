@@ -115,15 +115,16 @@ app.get('/restream/:channelId', (req, res) => {
       streamData.clientCount--;
       console.log(`[Restream] Client disconnected from ${streamKey} (${streamData.clientCount} clients remaining)`);
 
-      // Kill FFmpeg after 30 seconds if no clients
-      if (streamData.clientCount === 0) {
-        setTimeout(() => {
-          if (activeStreams.has(streamKey) && activeStreams.get(streamKey).clientCount === 0) {
-            console.log(`[Restream] Killing idle stream: ${streamKey}`);
-            activeStreams.get(streamKey).ffmpeg.kill('SIGTERM');
-            activeStreams.delete(streamKey);
-          }
-        }, 30000);
+      // AGGRESSIVE RESOURCE MANAGEMENT:
+      // Kill FFmpeg immediately if no clients remain to save bandwidth
+      if (streamData.clientCount <= 0) {
+        console.log(`[Restream] Killing idle stream immediately: ${streamKey}`);
+        try {
+          streamData.ffmpeg.kill('SIGTERM');
+        } catch (e) {
+          console.error(`[Restream] Error killing process: ${e.message}`);
+        }
+        activeStreams.delete(streamKey);
       }
     });
   } else {
@@ -211,15 +212,16 @@ app.get('/restream/:channelId', (req, res) => {
       streamData.clientCount--;
       console.log(`[Restream] Client disconnected from ${streamKey} (${streamData.clientCount} clients remaining)`);
 
-      // Kill FFmpeg after 30 seconds if no clients
-      if (streamData.clientCount === 0) {
-        setTimeout(() => {
-          if (activeStreams.has(streamKey) && activeStreams.get(streamKey).clientCount === 0) {
-            console.log(`[Restream] Killing idle stream: ${streamKey}`);
-            activeStreams.get(streamKey).ffmpeg.kill('SIGTERM');
-            activeStreams.delete(streamKey);
-          }
-        }, 30000);
+      // AGGRESSIVE RESOURCE MANAGEMENT:
+      // Kill FFmpeg immediately if no clients remain to save bandwidth
+      if (streamData.clientCount <= 0) {
+        console.log(`[Restream] Killing idle stream immediately: ${streamKey}`);
+        try {
+          streamData.ffmpeg.kill('SIGTERM');
+        } catch (e) {
+          console.error(`[Restream] Error killing process: ${e.message}`);
+        }
+        activeStreams.delete(streamKey);
       }
     });
   }
