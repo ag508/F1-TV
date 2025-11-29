@@ -129,28 +129,69 @@ const GlobalStyles = () => (
 
 // Official Wikimedia Layouts - Comprehensive circuit ID mapping
 const CIRCUIT_IMAGES = {
+  // Bahrain
   "bahrain": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Bahrain_International_Circuit--Grand_Prix_Layout.svg/640px-Bahrain_International_Circuit--Grand_Prix_Layout.svg.png",
-  "jeddah": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Jeddah_Street_Circuit_2021.svg/640px-Jeddah_Street_Circuit_2021.svg.png",
-  "albert_park": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Albert_Park_Circuit_2021.svg/640px-Albert_Park_Circuit_2021.svg.png",
-  "suzuka": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Suzuka_circuit_map_2005.svg/640px-Suzuka_circuit_map_2005.svg.png",
-  "shanghai": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Shanghai_International_Racing_Circuit_track_map.svg/640px-Shanghai_International_Racing_Circuit_track_map.svg.png",
-  "miami": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Miami_International_Autodrome_2022.svg/640px-Miami_International_Autodrome_2022.svg.png",
-  "imola": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Imola_2009.svg/640px-Imola_2009.svg.png",
-  "monaco": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Circuit_de_Monaco.svg/640px-Circuit_de_Monaco.svg.png",
-  "catalunya": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Catalunya_2021.svg/640px-Catalunya_2021.svg.png",
-  "villeneuve": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Circuit_Gilles_Villeneuve_2002.svg/640px-Circuit_Gilles_Villeneuve_2002.svg.png",
-  "red_bull_ring": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Red_Bull_Ring_2022.svg/640px-Red_Bull_Ring_2022.svg.png",
-  "silverstone": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Silverstone_Circuit_2020.svg/640px-Silverstone_Circuit_2020.svg.png",
-  "hungaroring": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Hungaroring_2003.svg/640px-Hungaroring_2003.svg.png",
-  "spa": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Spa-Francorchamps_of_Belgium_2007.svg/640px-Spa-Francorchamps_of_Belgium_2007.svg.png",
-  "zandvoort": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/Circuit_Zandvoort_2020.svg/640px-Circuit_Zandvoort_2020.svg.png",
-  "monza": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map.svg/640px-Monza_track_map.svg.png",
-  "baku": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Baku_Formula_One_circuit_map.svg/640px-Baku_Formula_One_circuit_map.svg.png",
-  "marina_bay": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Marina_Bay_Street_Circuit_2023.svg/640px-Marina_Bay_Street_Circuit_2023.svg.png",
-  "americas": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Austin_circuit.svg/640px-Austin_circuit.svg.png",
-  "rodriguez": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg/640px-Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg.png",
-  "interlagos": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Circuit_Interlagos_1990.svg/640px-Circuit_Interlagos_1990.svg.png",
-  // Las Vegas - All possible variations (using direct SVG URL)
+  // Saudi Arabia
+  "jeddah": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
+  "saudi_arabia": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
+  // Australia
+  "albert_park": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
+  "australia": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
+  // Japan
+  "suzuka": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
+  "japan": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
+  // China
+  "shanghai": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
+  "china": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
+  // Miami
+  "miami": "https://upload.wikimedia.org/wikipedia/commons/b/be/2022_F1_CourseLayout_Miami.svg",
+  // Emilia Romagna
+  "imola": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
+  "emilia_romagna": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
+  // Monaco
+  "monaco": "https://upload.wikimedia.org/wikipedia/commons/5/56/Circuit_Monaco.svg",
+  // Canada
+  "villeneuve": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
+  "canada": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
+  // Spain
+  "catalunya": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  "spanish": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  "spain": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  // Austria
+  "red_bull_ring": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
+  "austria": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
+  // Great Britain
+  "silverstone": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
+  "britain": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
+  // Hungary
+  "hungaroring": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
+  "hungary": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
+  // Belgium
+  "spa": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
+  "belgium": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
+  // Netherlands
+  "zandvoort": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
+  "dutch": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
+  // Italy
+  "monza": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
+  "italy": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
+  // Azerbaijan
+  "baku": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
+  "azerbaijan": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
+  // Singapore
+  "marina_bay": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
+  "singapore": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
+  // USA (Austin)
+  "americas": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  "usa": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  "united_states": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  // Mexico
+  "rodriguez": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
+  "mexico": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
+  // Brazil
+  "interlagos": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
+  "brazil": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
+  // Las Vegas
   "vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "las_vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "las-vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
@@ -158,9 +199,11 @@ const CIRCUIT_IMAGES = {
   "las vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   "lasvegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
   // Qatar
-  "losail": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Losail_International_Circuit_2023.svg/640px-Losail_International_Circuit_2023.svg.png",
+  "losail": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
+  "qatar": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
   // Abu Dhabi
-  "yas_marina": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Yas_Marina_Circuit_2021.svg/640px-Yas_Marina_Circuit_2021.svg.png"
+  "yas_marina": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg",
+  "abu_dhabi": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg"
 };
 
 const OFFICIAL_PLAYLIST_ID = "PLfoNZDHitwjUleAqrgG-OC5gVAL2mv-Mh";
@@ -179,10 +222,10 @@ const CircuitMap = ({ circuitId }) => {
 
   // Try to find the circuit image with various ID formats
   let imgSrc = CIRCUIT_IMAGES[circuitId] ||
-               CIRCUIT_IMAGES[normalizedId] ||
-               CIRCUIT_IMAGES[circuitId?.replace(/-/g, '_')] ||
-               CIRCUIT_IMAGES[circuitId?.replace(/_/g, '-')] ||
-               CIRCUIT_IMAGES["bahrain"];
+    CIRCUIT_IMAGES[normalizedId] ||
+    CIRCUIT_IMAGES[circuitId?.replace(/-/g, '_')] ||
+    CIRCUIT_IMAGES[circuitId?.replace(/_/g, '-')] ||
+    CIRCUIT_IMAGES["bahrain"];
 
   // Enhanced debugging - log all attempts
   console.group('🏁 Circuit Map Debug');
@@ -431,7 +474,7 @@ const VideoPlayer = ({ src, type }) => {
         backBufferLength: 90,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
-        xhrSetup: function(xhr) {
+        xhrSetup: function (xhr) {
           // Add custom headers for Xstream token URLs
           // Note: User-Agent can't be set in browser XMLHttpRequest due to security restrictions
           // The browser will send its default User-Agent
@@ -456,7 +499,7 @@ const VideoPlayer = ({ src, type }) => {
       hls.on(window.Hls.Events.ERROR, (_event, data) => {
         console.error('HLS Error:', data);
         if (data.fatal) {
-          switch(data.type) {
+          switch (data.type) {
             case window.Hls.ErrorTypes.NETWORK_ERROR:
               console.log('Network error, attempting to recover...');
               hls.startLoad();
