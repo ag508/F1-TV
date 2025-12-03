@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: f1-tv-app
+    env: docker
+    plan: free
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
