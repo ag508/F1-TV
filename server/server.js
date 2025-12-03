@@ -135,6 +135,9 @@ app.get('/restream/:channelId', (req, res) => {
       // SD: Transcode video to lower resolution and bitrate
       ffmpegArgs = [
         '-re',                 // Read input at native frame rate
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
         '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
         '-i', sourceUrl,
         '-c:v', 'libx264',     // Transcode video to H.264
@@ -153,6 +156,9 @@ app.get('/restream/:channelId', (req, res) => {
       // HD/UHD: Copy video, only transcode audio
       ffmpegArgs = [
         '-re',                 // Read input at native frame rate
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
         '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
         '-i', sourceUrl,
         '-c:v', 'copy',        // Copy video codec (no transcoding)
@@ -179,8 +185,8 @@ app.get('/restream/:channelId', (req, res) => {
     ffmpeg.stderr.on('data', (data) => {
       const output = data.toString().trim();
       if (output.includes('Input #') || output.includes('Output #') ||
-          output.includes('Stream #') || output.includes('error') ||
-          output.includes('Error')) {
+        output.includes('Stream #') || output.includes('error') ||
+        output.includes('Error')) {
         console.log(`[FFmpeg ${channelId}]`, output);
       }
     });
@@ -292,9 +298,9 @@ app.get('/proxy', async (req, res) => {
 
     // Handle HLS Playlists (Rewrite relative paths)
     const isM3U8 = contentType.includes('application/vnd.apple.mpegurl') ||
-                   contentType.includes('application/x-mpegurl') ||
-                   contentType.includes('mpegurl') ||
-                   url.endsWith('.m3u8');
+      contentType.includes('application/x-mpegurl') ||
+      contentType.includes('mpegurl') ||
+      url.endsWith('.m3u8');
 
     if (isM3U8) {
       console.log('[Proxy] Processing M3U8 playlist');
