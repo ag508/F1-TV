@@ -856,6 +856,7 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   const getStreamUrl = (channelId, server, username, password) => {
     // Use current window location to support any port
     const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    console.log(`[Stream] Connecting to backend at: ${baseUrl}`);
 
     // FFmpeg restream endpoint (MPEG-TS output)
     const restreamUrl = `${baseUrl}/restream/${channelId}?` +
