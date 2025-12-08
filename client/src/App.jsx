@@ -804,20 +804,26 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Helper function to generate stream URL with custom provider
   // Using FFmpeg restream endpoint with mpegts.js
   const getStreamUrl = (channelId, server, username, password) => {
-    // Direct backend connection to avoid Vite proxy issues with streaming
-    // If we're on localhost, assume backend is on port 3001 as requested
-    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const baseUrl = isDev ? 'http://localhost:3001' : window.location.origin;
+    // 1. Environment Variable (Best for Split Hosting: Render Backend + GH Pages Frontend)
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl) {
+      console.log(`[Stream] Using Configured API: ${envUrl}`);
+      return `${envUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    }
 
-    console.log(`[Stream] Direct Backend URL: ${baseUrl}`);
+    // 2. Localhost Development (Use standard dev port 3001)
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (isLocal) {
+      const localUrl = 'http://localhost:3001';
+      console.log(`[Stream] Using Local Dev API: ${localUrl}`);
+      return `${localUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    }
 
-    // FFmpeg restream endpoint (MPEG-TS output)
-    const restreamUrl = `${baseUrl}/restream/${channelId}?` +
-      `server=${encodeURIComponent(server)}&` +
-      `username=${encodeURIComponent(username)}&` +
-      `password=${encodeURIComponent(password)}`;
-
-    return restreamUrl;
+    // 3. Production / Self-Hosted (Ubuntu/Render Monolith)
+    // Automatically uses the current domain and port (e.g. port 10000 or 3001)
+    const originUrl = window.location.origin;
+    console.log(`[Stream] Using Origin API: ${originUrl}`);
+    return `${originUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
   };
 
   // Available F1 Channels from your Xstream provider
