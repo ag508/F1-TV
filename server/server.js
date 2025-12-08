@@ -21,7 +21,7 @@ const cookieJar = new Map();
 const activeStreams = new Map();
 
 // --- CONFIG ---
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const SOURCES = {
   DLHD: "https://dlhd.dad/api/stream", // Hypothetical endpoint
   STREAMED: "https://streamed.pk/api/f1" // Hypothetical endpoint
@@ -87,11 +87,12 @@ app.get('/restream/:channelId', (req, res) => {
   const isSD = channelId.endsWith('-sd');
   const actualChannelId = isSD ? channelId.replace('-sd', '') : channelId;
 
-  // Build source URL
-  const sourceUrl = `${server}/live/${username}/${password}/${actualChannelId}.m3u8`;
+  // Use .ts (MPEG-TS) endpoint which is more reliable for direct streaming/restreaming than .m3u8 HLS playlists
+  const sourceUrl = `${server}/live/${username}/${password}/${actualChannelId}.ts`;
   const streamKey = `${username}-${channelId}`;
 
   console.log(`[Restream] Request for channel ${channelId}${isSD ? ' (SD transcode)' : ''}`);
+  console.log(`[Restream] Source URL: ${sourceUrl}`);
 
   // Check if stream is already running
   if (activeStreams.has(streamKey)) {
@@ -134,6 +135,9 @@ app.get('/restream/:channelId', (req, res) => {
     if (isSD) {
       // SD: Transcode video to lower resolution and bitrate
       ffmpegArgs = [
+        '-y',
+        '-analyzeduration', '10000000', // Analyze more data to detect format
+        '-probesize', '10000000',
         '-re',                 // Read input at native frame rate
         '-reconnect', '1',
         '-reconnect_streamed', '1',
@@ -155,6 +159,9 @@ app.get('/restream/:channelId', (req, res) => {
     } else {
       // HD/UHD: Copy video, only transcode audio
       ffmpegArgs = [
+        '-y',
+        '-analyzeduration', '10000000',
+        '-probesize', '10000000',
         '-re',                 // Read input at native frame rate
         '-reconnect', '1',
         '-reconnect_streamed', '1',

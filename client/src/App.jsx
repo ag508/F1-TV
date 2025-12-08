@@ -129,81 +129,31 @@ const GlobalStyles = () => (
 
 // Official Wikimedia Layouts - Comprehensive circuit ID mapping
 const CIRCUIT_IMAGES = {
-  // Bahrain
-  "bahrain": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Bahrain_International_Circuit--Grand_Prix_Layout.svg/640px-Bahrain_International_Circuit--Grand_Prix_Layout.svg.png",
-  // Saudi Arabia
-  "jeddah": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
-  "saudi_arabia": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
-  // Australia
-  "albert_park": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
-  "australia": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
-  // Japan
-  "suzuka": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
-  "japan": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
-  // China
-  "shanghai": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
-  "china": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
-  // Miami
-  "miami": "https://upload.wikimedia.org/wikipedia/commons/b/be/2022_F1_CourseLayout_Miami.svg",
-  // Emilia Romagna
-  "imola": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
-  "emilia_romagna": "https://upload.wikimedia.org/wikipedia/commons/2/22/Imola_2009.svg",
-  // Monaco
-  "monaco": "https://upload.wikimedia.org/wikipedia/commons/5/56/Circuit_Monaco.svg",
-  // Canada
-  "villeneuve": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
-  "canada": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
-  // Spain
-  "catalunya": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
-  "spanish": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
-  "spain": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
-  // Austria
-  "red_bull_ring": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
-  "austria": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
-  // Great Britain
-  "silverstone": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
-  "britain": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
-  // Hungary
-  "hungaroring": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
-  "hungary": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
-  // Belgium
-  "spa": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
-  "belgium": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
-  // Netherlands
-  "zandvoort": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
-  "dutch": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
-  // Italy
-  "monza": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
-  "italy": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
-  // Azerbaijan
-  "baku": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
-  "azerbaijan": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
-  // Singapore
-  "marina_bay": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
-  "singapore": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
-  // USA (Austin)
-  "americas": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
-  "usa": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
-  "united_states": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
-  // Mexico
-  "rodriguez": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
-  "mexico": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
-  // Brazil
-  "interlagos": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
-  "brazil": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
-  // Las Vegas
-  "vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  "las_vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  "las-vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  "las_vegas_gp": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  "las vegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  "lasvegas": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
-  // Qatar
-  "losail": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
-  "qatar": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
-  // Abu Dhabi
-  "yas_marina": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg",
-  "abu_dhabi": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg"
+  // 2026 Sportstimes Slugs
+  "australian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Albert_Park_Circuit_2021.svg",
+  "chinese-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/1/14/Shanghai_International_Racing_Circuit_track_map.svg",
+  "japanese-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Suzuka_circuit_map--2005.svg",
+  "bahrain-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Bahrain_International_Circuit--Grand_Prix_Layout.svg/640px-Bahrain_International_Circuit--Grand_Prix_Layout.svg.png",
+  "saudi-arabia-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/4/4c/Jeddah_Street_Circuit_2021.svg",
+  "miami-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/b/be/2022_F1_CourseLayout_Miami.svg",
+  "canadian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/2/21/Circuit_Gilles_Villeneuve.svg",
+  "monaco-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/5/56/Circuit_Monaco.svg",
+  "barcelona-catalunya-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg",
+  "austrian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/3/36/Red_Bull_Ring_moto_2022.svg",
+  "british-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Silverstone_race_circuit.svg",
+  "belgian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/5/54/Spa-Francorchamps_of_Belgium.svg",
+  "hungarian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/9/91/Hungaroring.svg",
+  "dutch-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Zandvoort.svg",
+  "italian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Monza_track_map.svg",
+  "spanish-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/2/26/Formula1_Circuit_Catalunya_2021.svg", // Madrid? Keep Catalunya/Spain placeholder if Madrid map unavailable or reuse
+  "azerbaijan-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/f/f1/Baku_Formula_One_circuit_map.svg",
+  "singapore-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Marina_Bay_circuit_2023.svg",
+  "us-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/a/a5/Austin_circuit.svg",
+  "mexican-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/3/36/Aut%C3%B3dromo_Hermanos_Rodr%C3%ADguez_2015.svg",
+  "brazilian-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Circuit_Interlagos.svg",
+  "las-vegas-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/4/43/2023_Las_Vegas_street_circuit.svg",
+  "qatar-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Lusail_International_Circuit_2023.svg",
+  "abu-dhabi-grand-prix": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Circuit_Yas-Island.svg"
 };
 
 const OFFICIAL_PLAYLIST_ID = "PLfoNZDHitwjUleAqrgG-OC5gVAL2mv-Mh";
@@ -854,9 +804,12 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // Helper function to generate stream URL with custom provider
   // Using FFmpeg restream endpoint with mpegts.js
   const getStreamUrl = (channelId, server, username, password) => {
-    // Use current window location to support any port
-    const baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-    console.log(`[Stream] Connecting to backend at: ${baseUrl}`);
+    // Direct backend connection to avoid Vite proxy issues with streaming
+    // If we're on localhost, assume backend is on port 3001 as requested
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const baseUrl = isDev ? 'http://localhost:3001' : window.location.origin;
+
+    console.log(`[Stream] Direct Backend URL: ${baseUrl}`);
 
     // FFmpeg restream endpoint (MPEG-TS output)
     const restreamUrl = `${baseUrl}/restream/${channelId}?` +
@@ -872,74 +825,53 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // UK Sky Sports F1 channels with English commentary - tested and verified working
   // Multiple quality options and providers for maximum redundancy
   const liveStreams = [
-    // UHD Quality
+    // UHD Quality - Primary (Confirmed Working)
     {
-      id: 108714,
-      title: "UK: Sky Sports F1 UHD",
-      source: "germanyservers1.net",
-      quality: "UHD",
+      id: 646752,
+      title: "UK: Sky Sports F1 FHD (Primary)",
+      source: "fixontablesql",
+      quality: "FHD",
       bitrate: "Live",
-      url: getStreamUrl(108714, "http://germanyservers1.net:8080", "emregencer", "yp4fJzKoQp"),
+      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "fJ3cnHne", "cnhBp9D"),
       status: "ONLINE",
       type: "mpegts"
     },
 
-    // HD Quality - Primary
+    // UHD Quality - Backup 1 (High Quality Pattern)
     {
-      id: 29674,
-      title: "UK: Sky Sports F1 HD",
-      source: "nopemtayvwj.top",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(29674, "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-
-    // HD Quality - Backup Providers
-    {
-      id: 133543,
+      id: 94140,
       title: "UK: Sky Sports F1 HD (Backup 1)",
-      source: "mblacks1.xyz",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(133543, "http://mblacks1.xyz:8080", "hdkaptantv6782", "kptn@4866782"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-    {
-      id: 47865,
-      title: "UK: Sky Sports F1 HD (Backup 2)",
       source: "kstv.us",
       quality: "HD",
       bitrate: "Live",
       url: getStreamUrl(47865, "http://kstv.us:8080", "pdpv38DNVr", "0949989823"),
       status: "ONLINE",
-      type: "mpegts",
-      note: "Takes longer to start"
-    },
-    {
-      id: 336744,
-      title: "UK: Sky Sports F1 HD (Backup 3)",
-      source: "xxx.266227.xyz",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(336744, "http://xxx.266227.xyz:80", "mesut.demir", "LdEHUj7H4M"),
-      status: "ONLINE",
       type: "mpegts"
     },
 
-    // SD Quality - Server-side transcoded for slow connections
+    // Main Event - Backup 2
     {
-      id: "29674-sd",
-      title: "UK: Sky Sports F1 SD (Low Bandwidth)",
-      source: "nopemtayvwj.top",
-      quality: "SD",
+      id: 646751,
+      title: "UK: Sky Sports Main Event (Backup 2)",
+      source: "fixontablesql",
+      quality: "FHD",
       bitrate: "Live",
-      url: getStreamUrl("29674-sd", "http://nopemtayvwj.top:8080", "241669559833118054", "6901681721224287"),
+      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "xHAz12Mz", "wmwPe98"),
+      status: "ONLINE",
+      type: "mpegts",
+    },
+
+    // Backup 3 (Long Validity Account)
+    {
+      id: "646752-backup",
+      title: "UK: Sky Sports F1 FHD (Backup 3)",
+      source: "fixontablesql",
+      quality: "FHD",
+      bitrate: "Live",
+      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "aygtW26a", "dGhF7Sc"),
       status: "ONLINE",
       type: "mpegts"
-    },
+    }
   ];
 
   const archiveStreams = [
@@ -1043,18 +975,58 @@ const App = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const year = new Date().getFullYear();
+      setLoading(true);
       try {
+        // Primary: Try Ergast/Jolpica (Standard API)
+        const year = 2026;
         const res = await fetch(`https://api.jolpi.ca/ergast/f1/${year}.json`);
-        if (!res.ok) throw new Error('Failed');
-        const data = await res.json();
-        setRaces(data.MRData.RaceTable.Races);
+        if (res.ok) {
+          const data = await res.json();
+          const racesData = data.MRData.RaceTable.Races;
+          if (racesData && racesData.length > 0) {
+            console.log("Using Jolpica API Data");
+            setRaces(racesData);
+            return;
+          }
+        }
+
+        // Fallback 1: Sportstimes GitHub (Community Maintained Real-Time Data)
+        console.log("Fetching from Sportstimes GitHub...");
+        const stRes = await fetch("https://raw.githubusercontent.com/sportstimes/f1/main/_db/f1/2026.json");
+        if (!stRes.ok) throw new Error("Sportstimes API failed");
+
+        const stData = await stRes.json();
+        const racesArray = stData.races || stData;
+
+        if (!racesArray || !Array.isArray(racesArray)) throw new Error("Invalid API response format");
+
+        const mappedRaces = racesArray.map(r => ({
+          round: String(r.round),
+          raceName: `${r.name} Grand Prix`,
+          date: r.sessions.gp.split('T')[0],
+          time: r.sessions.gp.split('T')[1],
+          season: "2026",
+          Qualifying: {
+            date: r.sessions.qualifying ? r.sessions.qualifying.split('T')[0] : null,
+            time: r.sessions.qualifying ? r.sessions.qualifying.split('T')[1].replace('Z', '') : null
+          },
+          Circuit: {
+            circuitId: r.slug,
+            Location: {
+              locality: r.location,
+              country: r.name
+            }
+          }
+        })).sort((a, b) => Number(a.round) - Number(b.round));
+
+        console.log("Using Sportstimes Live Data");
+        setRaces(mappedRaces);
+
       } catch (e) {
-        // Fallback
-        setRaces([
-          { round: "21", raceName: "São Paulo Grand Prix", date: "2025-11-03", time: "17:00:00Z", Circuit: { circuitId: "interlagos", Location: { locality: "São Paulo" } } },
-          { round: "22", raceName: "Las Vegas Grand Prix", date: "2025-11-23", time: "06:00:00Z", Circuit: { circuitId: "las_vegas", Location: { locality: "Las Vegas" } } },
-        ]);
+        console.error("All APIs failed:", e);
+        // Emergency Fallback: Empty array to show error state instead of mock data
+        setRaces([]);
+
       } finally {
         setLoading(false);
       }
