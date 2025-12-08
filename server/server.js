@@ -408,8 +408,21 @@ app.options('/proxy', (req, res) => {
 });
 
 // Serve Frontend in Production
+// Serve Frontend in Production
 if (process.env.NODE_ENV === 'production') {
+  // Mount static files at both root and the base path to ensure assets load correctly
   app.use(express.static(path.join(__dirname, 'public')));
+  app.use('/F1-TV', express.static(path.join(__dirname, 'public')));
+
+  // Redirect root to the app base path
+  app.get('/', (req, res) => {
+    res.redirect('/F1-TV/');
+  });
+
+  // Handle SPA routing for both paths - send index.html
+  app.get('/F1-TV/*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
 }
 
 app.listen(PORT, () => {
