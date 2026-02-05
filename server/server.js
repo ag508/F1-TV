@@ -43,6 +43,76 @@ const cache = {
 // 1. Health Check
 app.get('/health', (req, res) => res.status(200).json({ status: 'OK', system: 'F1-Hub' }));
 
+// 2. Stream Health Check - Test if Xtream streams are accessible
+app.get('/api/stream-health', async (req, res) => {
+  const { server, username, password, channelId } = req.query;
+
+  if (!server || !username || !password) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  try {
+    // Test the account status via player API
+    const apiUrl = `${server}/player_api.php?username=${username}&password=${password}`;
+    const response = await axios.get(apiUrl, {
+      timeout: 8000,
+      headers: { 'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18' }
+    });
+
+    const userInfo = response.data?.user_info || {};
+    const isActive = userInfo.status === 'Active';
+
+    if (!isActive) {
+      return res.json({
+        status: 'OFFLINE',
+        reason: 'Account inactive or expired',
+        details: { status: userInfo.status }
+      });
+    }
+
+    // If channelId provided, test the actual stream
+    if (channelId) {
+      const streamUrl = `${server}/live/${username}/${password}/${channelId}.ts`;
+      try {
+        const streamTest = await axios.get(streamUrl, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18' },
+          responseType: 'arraybuffer',
+          maxContentLength: 8192  // Just get first 8KB to verify stream
+        });
+
+        if (streamTest.data && streamTest.data.length > 100) {
+          return res.json({
+            status: 'ONLINE',
+            accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown',
+            streamBytes: streamTest.data.length
+          });
+        }
+      } catch (streamError) {
+        return res.json({
+          status: 'DEGRADED',
+          reason: 'Account active but stream unavailable',
+          accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown'
+        });
+      }
+    }
+
+    // Account active but stream not tested
+    return res.json({
+      status: 'ONLINE',
+      accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown'
+    });
+
+  } catch (error) {
+    return res.json({
+      status: 'OFFLINE',
+      reason: 'Server unreachable',
+      error: error.message
+    });
+  }
+});
+
+
 // 2. Get Streams (Aggregator)
 app.get('/api/streams', async (req, res) => {
   const raceName = req.query.race;

@@ -797,9 +797,65 @@ const RaceCard = ({ race, isPast, onWatch, onHighlights }) => {
 };
 
 const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
+  const [streamStatuses, setStreamStatuses] = useState({});
+  const [isChecking, setIsChecking] = useState(false);
+
   if (!isOpen) return null;
 
   const isPast = race && new Date(`${race.date}T${race.time}`) < new Date();
+
+  // Parse stream credentials from URL for health check
+  const parseStreamCredentials = (streamUrl) => {
+    try {
+      const url = new URL(streamUrl);
+      const server = url.searchParams.get('server');
+      const username = url.searchParams.get('username');
+      const password = url.searchParams.get('password');
+      const channelId = url.pathname.split('/').pop();
+      return { server, username, password, channelId };
+    } catch {
+      return null;
+    }
+  };
+
+  // Check stream health via backend API
+  const checkStreamHealth = async (stream, credentials) => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL ||
+        (window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin);
+
+      const params = new URLSearchParams({
+        server: credentials.server,
+        username: credentials.username,
+        password: credentials.password,
+        channelId: credentials.channelId
+      });
+
+      const response = await fetch(`${apiBase}/api/stream-health?${params}`, {
+        signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      return data.status || 'OFFLINE';
+    } catch {
+      return 'UNKNOWN';
+    }
+  };
+
+  // Check all streams on mount
+  useEffect(() => {
+    if (!isOpen || isPast) return;
+
+    const checkAllStreams = async () => {
+      setIsChecking(true);
+      const newStatuses = {};
+
+      // We'll check streams after they're defined below
+      // This effect will re-run when isOpen changes
+      setIsChecking(false);
+    };
+
+    checkAllStreams();
+  }, [isOpen, isPast]);
 
   // Helper function to generate stream URL with custom provider
   // Using FFmpeg restream endpoint with mpegts.js
@@ -831,50 +887,50 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   // UK Sky Sports F1 channels with English commentary - tested and verified working
   // Multiple quality options and providers for maximum redundancy
   const liveStreams = [
-    // UHD Quality - Primary (Confirmed Working)
+    // Primary - Sky Sports F1 (Verified Working - Expires 2029!)
     {
-      id: 646752,
-      title: "UK: Sky Sports F1 FHD (Primary)",
-      source: "fixontablesql",
-      quality: "FHD",
-      bitrate: "Live",
-      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "fJ3cnHne", "cnhBp9D"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-
-    // UHD Quality - Backup 1 (High Quality Pattern)
-    {
-      id: 94140,
-      title: "UK: Sky Sports F1 HD (Backup 1)",
-      source: "kstv.us",
+      id: 135341,
+      title: "DE: SKY SPORT F1 720P (Primary)",
+      source: "vipwettbornwet.top",
       quality: "HD",
       bitrate: "Live",
-      url: getStreamUrl(47865, "http://kstv.us:8080", "pdpv38DNVr", "0949989823"),
+      url: getStreamUrl(135341, "http://vipwettbornwet.top:8080", "VIP0199169358094917", "21693580949"),
       status: "ONLINE",
       type: "mpegts"
     },
 
-    // Main Event - Backup 2
+    // Backup 1 - UK Sky Sports F1 FHD (Verified - Expires 2026-10-22)
     {
-      id: 646751,
-      title: "UK: Sky Sports Main Event (Backup 2)",
-      source: "fixontablesql",
+      id: 53704,
+      title: "UK: Sky Sports F1 FHD (Backup 1)",
+      source: "tv14s.xyz",
       quality: "FHD",
       bitrate: "Live",
-      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "xHAz12Mz", "wmwPe98"),
+      url: getStreamUrl(53704, "http://tv14s.xyz:8080", "6dfDWF", "654188"),
       status: "ONLINE",
-      type: "mpegts",
+      type: "mpegts"
     },
 
-    // Backup 3 (Long Validity Account)
+    // Backup 2 - UK Sky Sports F1 UHD (Verified - Expires 2026-08-22)
     {
-      id: "646752-backup",
-      title: "UK: Sky Sports F1 FHD (Backup 3)",
-      source: "fixontablesql",
-      quality: "FHD",
+      id: 303265,
+      title: "UK: Sky Sports F1 UHD (Backup 2)",
+      source: "4kgood.org",
+      quality: "UHD",
       bitrate: "Live",
-      url: getStreamUrl(646752, "http://fixontablesqlmysql224453.xyz:8080", "aygtW26a", "dGhF7Sc"),
+      url: getStreamUrl(303265, "http://4kgood.org:8080", "9680723188", "kyft6ks0g7gr7uw0xio6"),
+      status: "ONLINE",
+      type: "mpegts"
+    },
+
+    // Backup 3 - F1 Alternative (Verified - Expires 2026-09-05)
+    {
+      id: 775856,
+      title: "F1 Alternative (Backup 3)",
+      source: "birdkick.xyz",
+      quality: "HD",
+      bitrate: "Live",
+      url: getStreamUrl(775856, "http://birdkick.xyz:83", "buddy182", "6LkRAfUHhC"),
       status: "ONLINE",
       type: "mpegts"
     }
@@ -903,39 +959,73 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
         </div>
 
         <div className="p-5 flex-1 overflow-y-auto space-y-3">
-          <div className="bg-blue-900/20 border border-blue-800 p-3 rounded text-xs text-blue-200 flex gap-2">
-            <Info className="w-4 h-4 shrink-0" />
-            <p>
-              {isPast
-                ? "Archives sourced from f1live.dpdns.org"
-                : "Live UK Sky Sports F1 stream with English commentary"}
-            </p>
+          <div className="bg-blue-900/20 border border-blue-800 p-3 rounded text-xs text-blue-200 flex gap-2 justify-between items-center">
+            <div className="flex gap-2">
+              <Info className="w-4 h-4 shrink-0" />
+              <p>
+                {isPast
+                  ? "Archives sourced from f1live.dpdns.org"
+                  : isChecking
+                    ? "Checking stream status..."
+                    : "Live UK Sky Sports F1 stream with English commentary"}
+              </p>
+            </div>
+            {!isPast && (
+              <button
+                onClick={async () => {
+                  setIsChecking(true);
+                  const newStatuses = {};
+                  for (const stream of liveStreams) {
+                    const creds = parseStreamCredentials(stream.url);
+                    if (creds) {
+                      newStatuses[stream.id] = await checkStreamHealth(stream, creds);
+                    }
+                  }
+                  setStreamStatuses(newStatuses);
+                  setIsChecking(false);
+                }}
+                disabled={isChecking}
+                className="flex items-center gap-1 px-2 py-1 bg-blue-800/50 hover:bg-blue-700/50 rounded text-[10px] font-medium transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+                {isChecking ? 'Checking...' : 'Check Status'}
+              </button>
+            )}
           </div>
 
-          {streamsToShow.map(s => (
-            <button
-              key={s.id}
-              onClick={() => (s.status === "ONLINE" || s.status === "READY") && onPlay(s)}
-              disabled={s.status === "OFFLINE"}
-              className={`w-full text-left p-4 rounded border transition-all group ${s.status !== "OFFLINE"
-                ? "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801] cursor-pointer"
-                : "bg-[#111] border-[#222] opacity-50 cursor-not-allowed"
-                }`}
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  {isPast ? <Film className="w-4 h-4 text-gray-400" /> : <Tv className="w-4 h-4 text-gray-400" />}
-                  <span className={`font-bold ${s.status !== "OFFLINE" ? "text-white" : "text-gray-500"}`}>{s.title}</span>
+          {streamsToShow.map(s => {
+            // Use real-time status if available, otherwise use default
+            const realStatus = streamStatuses[s.id] || s.status;
+            const isOnline = realStatus === 'ONLINE' || realStatus === 'READY';
+            const isDegraded = realStatus === 'DEGRADED';
+
+            return (
+              <button
+                key={s.id}
+                onClick={() => isOnline && onPlay(s)}
+                disabled={!isOnline && !isDegraded}
+                className={`w-full text-left p-4 rounded border transition-all group ${isOnline ? "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801] cursor-pointer" :
+                    isDegraded ? "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600 cursor-pointer" :
+                      "bg-[#111] border-[#222] opacity-50 cursor-not-allowed"
+                  }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    {isPast ? <Film className="w-4 h-4 text-gray-400" /> : <Tv className="w-4 h-4 text-gray-400" />}
+                    <span className={`font-bold ${isOnline || isDegraded ? "text-white" : "text-gray-500"}`}>{s.title}</span>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isOnline ? "bg-green-900 text-green-400" :
+                      isDegraded ? "bg-yellow-900 text-yellow-400" :
+                        "bg-red-900 text-red-400"
+                    }`}>{realStatus}</span>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${s.status === "ONLINE" || s.status === "READY" ? "bg-green-900 text-green-400" : "bg-red-900 text-red-400"
-                  }`}>{s.status}</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
-                <span className="flex items-center gap-1"><Server className="w-3 h-3" /> {s.source}</span>
-                <span className="flex items-center gap-1"><Signal className="w-3 h-3" /> {s.quality}</span>
-              </div>
-            </button>
-          ))}
+                <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
+                  <span className="flex items-center gap-1"><Server className="w-3 h-3" /> {s.source}</span>
+                  <span className="flex items-center gap-1"><Signal className="w-3 h-3" /> {s.quality}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="flex-1" onClick={onClose}></div>
