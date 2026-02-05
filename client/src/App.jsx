@@ -175,7 +175,7 @@ const CircuitMap = ({ circuitId }) => {
     CIRCUIT_IMAGES[normalizedId] ||
     CIRCUIT_IMAGES[circuitId?.replace(/-/g, '_')] ||
     CIRCUIT_IMAGES[circuitId?.replace(/_/g, '-')] ||
-    CIRCUIT_IMAGES["bahrain"];
+    CIRCUIT_IMAGES["bahrain-grand-prix"];
 
   // Enhanced debugging - log all attempts
   console.group('🏁 Circuit Map Debug');
@@ -196,7 +196,7 @@ const CircuitMap = ({ circuitId }) => {
         onError={(e) => {
           console.error('❌ Circuit image failed to load:', imgSrc);
           e.target.onerror = null;
-          e.target.src = CIRCUIT_IMAGES["bahrain"];
+          e.target.src = CIRCUIT_IMAGES["bahrain-grand-prix"];
         }}
       />
       <div className="absolute bottom-2 right-2 text-[10px] text-[#ff1801] font-mono uppercase border border-[#ff1801] px-2 py-0.5 rounded bg-black/50 backdrop-blur-sm">
@@ -800,9 +800,17 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
   const [streamStatuses, setStreamStatuses] = useState({});
   const [isChecking, setIsChecking] = useState(false);
 
-  if (!isOpen) return null;
-
+  // Calculate isPast before any conditional returns
   const isPast = race && new Date(`${race.date}T${race.time}`) < new Date();
+
+  // useEffect must be called BEFORE any early returns (Rules of Hooks)
+  useEffect(() => {
+    if (!isOpen || isPast) return;
+    // Health check triggered by button click
+  }, [isOpen, isPast]);
+
+  // Early return AFTER all hooks
+  if (!isOpen) return null;
 
   // Parse stream credentials from URL for health check
   const parseStreamCredentials = (streamUrl) => {
@@ -840,22 +848,6 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
       return 'UNKNOWN';
     }
   };
-
-  // Check all streams on mount
-  useEffect(() => {
-    if (!isOpen || isPast) return;
-
-    const checkAllStreams = async () => {
-      setIsChecking(true);
-      const newStatuses = {};
-
-      // We'll check streams after they're defined below
-      // This effect will re-run when isOpen changes
-      setIsChecking(false);
-    };
-
-    checkAllStreams();
-  }, [isOpen, isPast]);
 
   // Helper function to generate stream URL with custom provider
   // Using FFmpeg restream endpoint with mpegts.js
@@ -1005,8 +997,8 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
                 onClick={() => isOnline && onPlay(s)}
                 disabled={!isOnline && !isDegraded}
                 className={`w-full text-left p-4 rounded border transition-all group ${isOnline ? "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801] cursor-pointer" :
-                    isDegraded ? "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600 cursor-pointer" :
-                      "bg-[#111] border-[#222] opacity-50 cursor-not-allowed"
+                  isDegraded ? "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600 cursor-pointer" :
+                    "bg-[#111] border-[#222] opacity-50 cursor-not-allowed"
                   }`}
               >
                 <div className="flex justify-between items-start mb-2">
@@ -1015,8 +1007,8 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
                     <span className={`font-bold ${isOnline || isDegraded ? "text-white" : "text-gray-500"}`}>{s.title}</span>
                   </div>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isOnline ? "bg-green-900 text-green-400" :
-                      isDegraded ? "bg-yellow-900 text-yellow-400" :
-                        "bg-red-900 text-red-400"
+                    isDegraded ? "bg-yellow-900 text-yellow-400" :
+                      "bg-red-900 text-red-400"
                     }`}>{realStatus}</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
