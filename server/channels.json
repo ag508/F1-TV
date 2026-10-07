@@ -1,0 +1,22 @@
+[
+  { "key": "f1-primary", "title": "Sky Sports F1 FHD (Primary)", "quality": "1080p50", "english": true, "verified": true,
+    "server": "http://goldenfrance.xyz:80", "username": "6Y5M5AKFQ1ZWADQ", "password": "rVcDYvPKme", "channelId": 17289 },
+  { "key": "f1-backup1", "title": "UK: Sky Sports F1 FHD (Backup 1)", "quality": "1080p50", "english": true, "verified": true,
+    "server": "http://31.43.191.125:8080", "username": "VIP01102172269402192", "password": "d413237b8e30", "channelId": 146470 },
+  { "key": "f1-backup2", "title": "Sky Sports F1 FHD (Backup 2)", "quality": "1080p50", "english": true, "verified": true,
+    "server": "http://speedmel.net:80", "username": "T5V6LCA59GN6JWE", "password": "D7a0CzVHME", "channelId": 17289 },
+  { "key": "f1-backup3", "title": "Sky Sports F1 4K (Backup 3)", "quality": "4K→1080p", "english": true, "verified": true,
+    "server": "http://watchnowone.cc:80", "username": "176A4DD22212974", "password": "eKHQ1EV35a", "channelId": 1281428 },
+  { "key": "f1-backup4", "title": "F1 TV (Backup 4)", "quality": "1080p", "english": true, "verified": true,
+    "server": "http://211.ogtv.xyz:8080", "username": "Chris0001", "password": "sDk7TsTGh33R", "channelId": 825895 },
+  { "key": "f1-backup5", "title": "F1 TV Race Feed (Backup 5)", "quality": "1080p", "english": true, "verified": true,
+    "server": "http://sthuuuhj.itransat.net:80", "username": "Y91W2M2LF4YN3D4", "password": "7DtWTwY4CP", "channelId": 1171972 },
+  { "key": "f1-backup6", "title": "F1 TV Race — ENG commentary (Backup 6)", "quality": "1080p", "english": true, "verified": true,
+    "server": "http://ghost.nomorecable.me:8000", "username": "sgtK4nKpjS", "password": "LFp47LN2zd", "channelId": 41358 },
+  { "key": "f1-apple1", "title": "Apple TV F1 (Backup 7)", "quality": "720p", "english": true, "verified": true,
+    "server": "http://speedmel.net:80", "username": "67UA9NE5PXM778C", "password": "XDU6z8u56m", "channelId": 1412770 },
+  { "key": "f1-apple2", "title": "Apple TV F1 (Backup 8)", "quality": "1080p", "english": true, "verified": false,
+    "server": "http://goldenfrance.xyz:80", "username": "4RSMHE3F8SW1S1Q", "password": "QlTXv8JABn", "channelId": 1412770 },
+  { "key": "f1-apple3", "title": "Apple TV F1 (Backup 9)", "quality": "720p", "english": true, "verified": true,
+    "server": "http://matrix8ktrex.xyz:80", "username": "54GY4U84TDP4RK3", "password": "ZDypkAVuSZ", "channelId": 1412770 }
+]

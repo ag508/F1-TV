@@ -9,8 +9,9 @@
  *
  * Load order:
  *   1. CHANNELS_FILE=/path/to/channels.json   (explicit override)
- *   2. server/channels.json                    (git-ignored; the real list)
- *   3. the built-in placeholder below          (no real credentials)
+ *   2. server/channels.local.json              (git-ignored local override)
+ *   3. server/channels.json                    (committed; ships in the image)
+ *   4. the built-in placeholder below          (no real credentials)
  *
  * Copy server/channels.example.json to server/channels.json and fill in your
  * own provider lines to run the app. Each entry:
@@ -33,7 +34,11 @@ const PLACEHOLDER = [
 ];
 
 function loadChannels() {
-  const candidates = [process.env.CHANNELS_FILE, path.join(__dirname, 'channels.json')].filter(Boolean);
+  const candidates = [
+    process.env.CHANNELS_FILE,
+    path.join(__dirname, 'channels.local.json'),
+    path.join(__dirname, 'channels.json'),
+  ].filter(Boolean);
   for (const file of candidates) {
     try {
       const loaded = JSON.parse(fs.readFileSync(file, 'utf8'));

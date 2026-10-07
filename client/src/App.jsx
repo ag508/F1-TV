@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, MapPin, Play, Trophy, Tv, AlertCircle, X, RefreshCw, Server, Signal, Info, Film, Timer, BarChart3, Youtube, Users, CheckCircle2, Radio, Zap, Monitor } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Calendar, MapPin, Play, Pause, Trophy, Tv, AlertCircle, X, RefreshCw, Server, Signal, Info, Film, Timer, BarChart3, Youtube, Users, CheckCircle2, Radio, Zap, Monitor, Volume2, VolumeX, Maximize, Minimize, PictureInPicture2, ChevronDown, PanelRightOpen, PanelRightClose, Activity } from 'lucide-react';
 import mpegts from 'mpegts.js';
 import Hls from 'hls.js';
 import LiveTelemetry from './components/LiveTelemetry';
@@ -264,7 +264,7 @@ const PlayerStatus = ({ status }) => {
   }
   // Buffering / reconnecting: keep the video on screen, show a small chip
   return (
-    <div className="absolute top-3 right-3 z-10 flex items-center gap-2 bg-black/80 border border-[#333] rounded-full px-3 py-1.5 text-xs text-white">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-black/80 border border-[#333] rounded-full px-3 py-1.5 text-xs text-white whitespace-nowrap">
       <RefreshCw className="w-3 h-3 text-[#ff1801] animate-spin" />
       {status.phase === 'reconnecting' ? `Reconnecting${status.attempt > 1 ? ` (attempt ${status.attempt})` : ''}…` : 'Buffering…'}
       {status.detail && <span className="text-gray-400 hidden md:inline">{status.detail}</span>}
@@ -366,15 +366,45 @@ const HLS_LOAD_POLICY = (ttfb, total, retries) => ({
 // HLS player with DVR: the server keeps the last ~10 minutes of segments, so
 // when the connection drops or buffers we resume from the exact segment we were
 // on instead of jumping ahead and losing part of the session.
+const formatDuration = (seconds) => {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+const ControlButton = ({ onClick, title, children, active }) => (
+  <button onClick={onClick} title={title} aria-label={title}
+    className={`p-2 rounded-full transition-colors ${active ? 'text-[#ff1801]' : 'text-white/90 hover:text-white'} hover:bg-white/10`}>
+    {children}
+  </button>
+);
+
+const StatRow = ({ label, value }) => (
+  <div className="flex justify-between gap-6"><span className="text-gray-500">{label}</span><span className="text-gray-200">{value}</span></div>
+);
+
 const HlsPlayer = ({ src, live }) => {
+  const containerRef = useRef(null);
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  const hideTimer = useRef(null);
+  // Our server's media playlists don't declare codecs/bitrate, so measure them
+  const mediaInfoRef = useRef({ codecs: '', bitrate: 0 });
   const [status, setStatus] = useState(() =>
     Hls.isSupported() || document.createElement('video').canPlayType('application/vnd.apple.mpegurl')
       ? { phase: 'loading' }
       : { phase: 'error', detail: 'HLS is not supported in this browser' });
-  const [behindLive, setBehindLive] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [showStats, setShowStats] = useState(false);
+  const [timeline, setTimeline] = useState({ start: 0, end: 0, current: 0, buffered: 0 });
+  const [stats, setStats] = useState(null);
+  const [hover, setHover] = useState(null); // seek bar hover { pct, time }
 
+  // --- Playback engine (hls.js with resume-in-place recovery) ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -437,6 +467,13 @@ const HlsPlayer = ({ src, live }) => {
         });
       }
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => { }));
+      hls.on(Hls.Events.BUFFER_CODECS, (_e, data) => {
+        mediaInfoRef.current.codecs = [data.video?.codec, data.audio?.codec].filter(Boolean).join(' / ');
+      });
+      hls.on(Hls.Events.FRAG_LOADED, (_e, { frag }) => {
+        const bytes = frag.stats?.total || frag.stats?.loaded;
+        if (bytes && frag.duration) mediaInfoRef.current.bitrate = (bytes * 8) / frag.duration;
+      });
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         attempt = 0;
         mediaRecoveries = 0;
@@ -465,7 +502,6 @@ const HlsPlayer = ({ src, live }) => {
     };
 
     const watchdog = setInterval(() => {
-      if (hls?.liveSyncPosition) setBehindLive(Math.max(0, hls.liveSyncPosition - video.currentTime));
       if (video.paused || video.currentTime !== lastTime) {
         if (video.currentTime !== lastTime) setStatus(s => (s.phase === 'buffering' ? { phase: 'playing' } : s));
         lastTime = video.currentTime;
@@ -494,26 +530,230 @@ const HlsPlayer = ({ src, live }) => {
     };
   }, [src]);
 
+  // --- UI state: timeline, stats, play/volume/fullscreen sync ---
+  useEffect(() => {
+    const id = setInterval(() => {
+      const v = videoRef.current;
+      if (!v) return;
+      const hls = hlsRef.current;
+      const seek = v.seekable;
+      const start = seek.length ? seek.start(0) : 0;
+      const seekEnd = seek.length ? seek.end(seek.length - 1) : (Number.isFinite(v.duration) ? v.duration : 0);
+      const end = Math.max(live ? (hls?.liveSyncPosition ?? seekEnd) : seekEnd, v.currentTime);
+      let bufferedEnd = v.currentTime;
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (v.buffered.start(i) <= v.currentTime + 0.5 && v.buffered.end(i) >= v.currentTime) bufferedEnd = v.buffered.end(i);
+      }
+      setTimeline({ start, end, current: v.currentTime, buffered: bufferedEnd });
+      const quality = v.getVideoPlaybackQuality?.();
+      const level = hls?.levels?.[hls.currentLevel >= 0 ? hls.currentLevel : 0];
+      setStats({
+        width: v.videoWidth,
+        height: v.videoHeight,
+        buffer: Math.max(0, bufferedEnd - v.currentTime),
+        bandwidth: hls?.bandwidthEstimate || 0,
+        bitrate: level?.bitrate || mediaInfoRef.current.bitrate,
+        codecs: [level?.videoCodec, level?.audioCodec].filter(Boolean).join(' / ') || mediaInfoRef.current.codecs,
+        dropped: quality?.droppedVideoFrames ?? 0,
+        frames: quality?.totalVideoFrames ?? 0,
+      });
+    }, 500);
+    return () => clearInterval(id);
+  }, [live]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const sync = () => { setPlaying(!v.paused); setMuted(v.muted); setVolume(v.volume); };
+    const events = ['play', 'pause', 'playing', 'volumechange'];
+    events.forEach(e => v.addEventListener(e, sync));
+    const onFullscreen = () => setFullscreen(document.fullscreenElement === containerRef.current);
+    document.addEventListener('fullscreenchange', onFullscreen);
+    return () => {
+      events.forEach(e => v.removeEventListener(e, sync));
+      document.removeEventListener('fullscreenchange', onFullscreen);
+      clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  // --- Actions ---
+  const togglePlay = () => { const v = videoRef.current; if (v.paused) v.play().catch(() => { }); else v.pause(); };
+  const toggleMute = () => { const v = videoRef.current; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; };
+  const changeVolume = (value) => { const v = videoRef.current; v.volume = value; v.muted = value === 0; };
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+    else containerRef.current?.requestFullscreen?.().catch(() => { });
+  };
+  const togglePip = async () => {
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await videoRef.current.requestPictureInPicture();
+    } catch { /* PiP unsupported */ }
+  };
   const goLive = () => {
     const hls = hlsRef.current;
     if (hls?.liveSyncPosition) videoRef.current.currentTime = hls.liveSyncPosition;
     videoRef.current.play().catch(() => { });
   };
+  const seekToPct = (pct) => {
+    const { start, end } = timeline;
+    if (end > start) videoRef.current.currentTime = start + pct * (end - start);
+  };
+  const showControls = () => {
+    setControlsVisible(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => { if (!videoRef.current?.paused) setControlsVisible(false); }, 3000);
+  };
+
+  // Keyboard shortcuts: Space/K play, M mute, F fullscreen, L go live, ←/→ seek 10s
+  useEffect(() => {
+    const onKey = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      const v = videoRef.current;
+      if (!v) return;
+      switch (e.key.toLowerCase()) {
+        case ' ': case 'k': e.preventDefault(); if (v.paused) v.play().catch(() => { }); else v.pause(); break;
+        case 'm': v.muted = !v.muted; break;
+        case 'f': if (document.fullscreenElement) document.exitFullscreen().catch(() => { }); else containerRef.current?.requestFullscreen?.().catch(() => { }); break;
+        case 'l': if (hlsRef.current?.liveSyncPosition) v.currentTime = hlsRef.current.liveSyncPosition; break;
+        case 'arrowleft': v.currentTime = Math.max(0, v.currentTime - 10); break;
+        case 'arrowright': v.currentTime = v.currentTime + 10; break;
+        default: return;
+      }
+      setControlsVisible(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // --- Derived display values ---
+  const { start, end, current, buffered } = timeline;
+  const span = Math.max(end - start, 0.001);
+  const playedPct = Math.min(100, Math.max(0, ((current - start) / span) * 100));
+  const bufferedPct = Math.min(100, Math.max(0, ((buffered - start) / span) * 100));
+  const behindLive = Math.max(0, end - current);
+  const atLive = !live || behindLive < 15;
+  const hideUi = !controlsVisible && playing;
+  const resolution = stats?.height ? `${stats.height}p` : null;
+  const ready = status.phase !== 'loading' && status.phase !== 'error';
 
   return (
-    <div className="relative w-full h-full bg-black">
+    <div ref={containerRef}
+      className={`relative w-full h-full bg-black select-none overflow-hidden ${hideUi ? 'cursor-none' : ''}`}
+      onMouseMove={showControls} onMouseLeave={() => playing && setControlsVisible(false)}>
+      <video ref={videoRef} autoPlay playsInline onClick={togglePlay} onDoubleClick={toggleFullscreen}
+        className="w-full h-full bg-black object-contain" />
       <PlayerStatus status={status} />
-      <video ref={videoRef} controls autoPlay playsInline className="w-full h-full bg-black object-contain" />
-      {live && status.phase !== 'loading' && (
-        <button onClick={goLive}
-          className={`absolute top-3 left-3 z-10 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold border ${behindLive > 15 ? 'bg-black/80 border-[#333] text-gray-300 hover:text-white' : 'bg-[#ff1801]/90 border-[#ff1801] text-white'}`}>
-          <span className={`w-2 h-2 rounded-full ${behindLive > 15 ? 'bg-gray-500' : 'bg-white'}`} />
-          {behindLive > 15 ? `-${Math.floor(behindLive / 60)}:${String(Math.floor(behindLive % 60)).padStart(2, '0')} · GO LIVE` : 'LIVE'}
+
+      {/* Top bar: live state + quality */}
+      {ready && (
+        <div className={`absolute top-0 inset-x-0 flex items-start justify-between p-3 bg-gradient-to-b from-black/70 to-transparent transition-opacity duration-300 ${hideUi ? 'opacity-0' : 'opacity-100'}`}>
+          {live ? (
+            <button onClick={goLive} title="Jump to live (L)"
+              className={`flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-bold border tracking-wider ${atLive ? 'bg-[#ff1801] border-[#ff1801] text-white' : 'bg-black/70 border-white/20 text-gray-200 hover:border-[#ff1801]'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${atLive ? 'bg-white animate-pulse' : 'bg-gray-400'}`} />
+              {atLive ? 'LIVE' : `-${formatDuration(behindLive)} · GO LIVE`}
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            {resolution && (
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-wider ${stats.height >= 2160 ? 'bg-purple-600 text-white' : stats.height >= 1080 ? 'bg-white text-black' : 'bg-white/20 text-white'}`}>
+                {stats.height >= 2160 ? '4K' : stats.height >= 1080 ? 'FHD' : 'HD'} · {resolution}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Stats for nerds */}
+      {showStats && stats && (
+        <div className="absolute top-12 right-3 z-20 w-64 bg-black/85 backdrop-blur border border-white/10 rounded-lg p-3 text-[11px] font-mono space-y-1">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[#ff1801] font-bold tracking-wider">STREAM STATS</span>
+            <button onClick={() => setShowStats(false)} className="text-gray-500 hover:text-white"><X className="w-3 h-3" /></button>
+          </div>
+          <StatRow label="Resolution" value={stats.width ? `${stats.width}×${stats.height}` : '—'} />
+          <StatRow label="Codecs" value={stats.codecs || '—'} />
+          <StatRow label="Stream bitrate" value={stats.bitrate ? `${(stats.bitrate / 1e6).toFixed(1)} Mbps` : '—'} />
+          <StatRow label="Connection" value={stats.bandwidth ? `${(stats.bandwidth / 1e6).toFixed(1)} Mbps` : '—'} />
+          <StatRow label="Buffer ahead" value={`${stats.buffer.toFixed(1)} s`} />
+          {live && <StatRow label="Behind live" value={formatDuration(behindLive)} />}
+          <StatRow label="DVR window" value={formatDuration(end - start)} />
+          <StatRow label="Dropped frames" value={`${stats.dropped} / ${stats.frames}`} />
+        </div>
+      )}
+
+      {/* Big play button when paused */}
+      {ready && !playing && (
+        <button onClick={togglePlay} aria-label="Play"
+          className="absolute inset-0 m-auto w-20 h-20 rounded-full bg-[#ff1801]/90 hover:bg-[#ff1801] flex items-center justify-center shadow-2xl shadow-red-900/40 transition-transform hover:scale-105">
+          <Play className="w-9 h-9 text-white fill-current ml-1" />
         </button>
+      )}
+
+      {/* Bottom controls */}
+      {ready && (
+        <div className={`absolute bottom-0 inset-x-0 px-3 pb-2 pt-12 bg-gradient-to-t from-black/90 via-black/50 to-transparent transition-opacity duration-300 ${hideUi ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          {/* DVR / seek bar */}
+          <div className="relative h-4 flex items-center cursor-pointer group/seek"
+            onMouseMove={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const pct = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+              setHover({ pct, time: start + pct * span });
+            }}
+            onMouseLeave={() => setHover(null)}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              seekToPct(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)));
+            }}>
+            <div className="relative w-full h-1 group-hover/seek:h-1.5 transition-all bg-white/20 rounded-full overflow-hidden">
+              <div className="absolute inset-y-0 left-0 bg-white/35" style={{ width: `${bufferedPct}%` }} />
+              <div className="absolute inset-y-0 left-0 bg-[#ff1801]" style={{ width: `${playedPct}%` }} />
+            </div>
+            <div className="absolute w-3 h-3 rounded-full bg-[#ff1801] shadow -translate-x-1/2 scale-0 group-hover/seek:scale-100 transition-transform" style={{ left: `${playedPct}%` }} />
+            {hover && (
+              <div className="absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded bg-black/90 border border-white/10 text-[10px] font-mono text-white whitespace-nowrap" style={{ left: `${hover.pct * 100}%` }}>
+                {live ? (end - hover.time < 1 ? 'LIVE' : `-${formatDuration(end - hover.time)}`) : formatDuration(hover.time)}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 mt-1">
+            <ControlButton onClick={togglePlay} title={playing ? 'Pause (K)' : 'Play (K)'}>
+              {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+            </ControlButton>
+            <div className="flex items-center group/vol">
+              <ControlButton onClick={toggleMute} title={muted ? 'Unmute (M)' : 'Mute (M)'}>
+                {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </ControlButton>
+              <div className="w-0 group-hover/vol:w-20 group-focus-within/vol:w-20 overflow-hidden transition-all duration-200 flex items-center">
+                <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} aria-label="Volume"
+                  onChange={(e) => changeVolume(Number(e.target.value))}
+                  className="w-20 accent-[#ff1801] cursor-pointer" />
+              </div>
+            </div>
+            <span className="ml-2 text-xs font-mono text-gray-300 whitespace-nowrap">
+              {live ? (atLive ? 'Live' : `-${formatDuration(behindLive)} behind live`) : `${formatDuration(current - start)} / ${formatDuration(end - start)}`}
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              {live && !atLive && (
+                <button onClick={goLive} className="hidden sm:inline-flex mr-1 px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap bg-[#ff1801] text-white hover:bg-[#cc0000]">GO LIVE</button>
+              )}
+              <ControlButton onClick={() => setShowStats(v => !v)} title="Stream stats" active={showStats}><BarChart3 className="w-5 h-5" /></ControlButton>
+              {document.pictureInPictureEnabled && (
+                <ControlButton onClick={togglePip} title="Picture in picture"><PictureInPicture2 className="w-5 h-5" /></ControlButton>
+              )}
+              <ControlButton onClick={toggleFullscreen} title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
+                {fullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+              </ControlButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 };
+
 
 const VideoPlayer = ({ src, type }) => {
   if (type === 'mpegts') return <MpegtsPlayer src={src} />;
@@ -698,7 +938,7 @@ const SessionList = ({ sessions }) => {
   );
 };
 
-const Hero = ({ race, weekend, feed, onWatch }) => {
+const Hero = ({ race, weekend, feed, onWatch, telemetryPaused }) => {
   if (!race) return null;
   const { live, next, sessions } = weekend;
   const replay = feed?.source === 'replay' && feed.session;
@@ -773,7 +1013,10 @@ const Hero = ({ race, weekend, feed, onWatch }) => {
       {/* Live telemetry for the running session */}
       {showTelemetry && (
         <div className="relative z-10 lg:col-span-12 border-t border-[#333] bg-[#0b0b0b]/95">
-          <LiveTelemetry />
+          {/* The player shows telemetry next to the feed; don't run two live connections */}
+          {telemetryPaused
+            ? <div className="h-24 flex items-center justify-center text-xs text-gray-500">Live telemetry is open in the player</div>
+            : <LiveTelemetry />}
         </div>
       )}
     </section>
@@ -883,6 +1126,16 @@ const RaceCard = ({ race, isPast, onWatch, onHighlights }) => {
 // for the HLS and health routes.
 const streamUrlForKey = (key) => `${apiBase()}/hls/${encodeURIComponent(key)}/index.m3u8?profile=auto`;
 
+// A playable stream object for a live channel from /api/channels
+const streamForChannel = (c) => ({
+  key: c.key,
+  title: c.title,
+  source: c.english ? 'English commentary' : 'Live feed',
+  quality: c.quality,
+  url: streamUrlForKey(c.key),
+  type: 'hls-live',
+});
+
 const STATUS_STYLES = {
   ONLINE: { badge: "bg-green-900 text-green-400", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
   DEGRADED: { badge: "bg-yellow-900 text-yellow-400", card: "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600" },
@@ -892,21 +1145,12 @@ const STATUS_STYLES = {
   READY: { badge: "bg-green-900 text-green-400", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
 };
 
-const StreamSidebar = ({ isOpen, onClose, race, isArchive, onPlay }) => {
-  const [channels, setChannels] = useState([]);
+const StreamSidebar = ({ isOpen, onClose, race, isArchive, channels, onPlay }) => {
   const [health, setHealth] = useState({});
   const [isChecking, setIsChecking] = useState(false);
   const checkRun = useRef(0);
 
   const isPast = !!isArchive;
-
-  // Load the channel list (metadata only) from the server
-  useEffect(() => {
-    fetch(`${apiBase()}/api/channels`)
-      .then(res => (res.ok ? res.json() : []))
-      .then(data => Array.isArray(data) && setChannels(data))
-      .catch(() => setChannels([]));
-  }, []);
 
   // Check every channel in parallel; each card updates as soon as its own
   // result arrives instead of waiting for the slowest provider.
@@ -944,14 +1188,7 @@ const StreamSidebar = ({ isOpen, onClose, race, isArchive, onPlay }) => {
     { key: 'archive-highlights', title: "Race Highlights", source: "Archive", quality: "720p", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", type: "hls" },
   ];
 
-  const liveStreams = channels.map(c => ({
-    key: c.key,
-    title: c.title,
-    source: c.english ? 'English commentary' : 'Live feed',
-    quality: c.quality,
-    url: streamUrlForKey(c.key),
-    type: 'hls-live',
-  }));
+  const liveStreams = channels.map(streamForChannel);
 
   const streamsToShow = isPast ? archiveStreams : liveStreams;
 
@@ -1045,30 +1282,104 @@ const StreamSidebar = ({ isOpen, onClose, race, isArchive, onPlay }) => {
   );
 };
 
-const PlayerModal = ({ stream, onClose }) => {
+// Full-screen viewer. While an F1 session is live, the feed sits on the left
+// (70%) with live telemetry on the right (30%); otherwise the feed is centred.
+// The video element stays mounted when the layout changes, so toggling the
+// telemetry panel never restarts the stream. Fullscreen (F) shows video only.
+const PlayerModal = ({ stream, channels, liveSession, onSwitch, onClose }) => {
+  const [showTelemetry, setShowTelemetry] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!stream) return;
+    const onKey = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      if (e.key === 'Escape' && !document.fullscreenElement) onClose();
+      if (e.key.toLowerCase() === 't') setShowTelemetry(v => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stream, onClose]);
+
   if (!stream) return null;
 
+  const isLiveStream = stream.type === 'hls-live' || stream.type === 'mpegts';
+  const canSplit = isLiveStream && !!liveSession;
+  const split = canSplit && showTelemetry;
+  const switchable = isLiveStream && channels.length > 1;
+
   return (
-    <div className="fixed inset-0 z-[70] bg-black flex flex-col animate-fade-in">
-      <div className="flex items-center justify-between p-4 bg-[#101010] border-b border-[#333]">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            {stream.type !== 'youtube' && <div className="live-indicator"></div>}
-            <span className="text-[#ff1801] font-bold text-xs md:text-sm tracking-wider">
-              {stream.type === 'youtube' ? 'HIGHLIGHTS' : 'LIVE'}
-            </span>
-          </div>
-          <div className="w-px h-4 bg-[#333]"></div>
-          <span className="text-white font-bold truncate max-w-[200px] md:max-w-none">{stream.title}</span>
-        </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-white hover:bg-[#333] p-2 rounded-full transition-all">
-          <X className="w-6 h-6" />
+    <div className="fixed inset-0 z-[70] bg-[#050505] flex flex-col animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-3 md:px-4 h-14 bg-[#101010] border-b border-[#333] shrink-0">
+        <button onClick={onClose} title="Close (Esc)" aria-label="Close player"
+          className="p-2 -ml-1 rounded-full text-gray-400 hover:text-white hover:bg-[#333] transition-colors">
+          <X className="w-5 h-5" />
         </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {stream.type !== 'youtube' && <div className="live-indicator" />}
+          <span className="text-[#ff1801] font-bold text-xs tracking-wider">
+            {stream.type === 'youtube' ? 'HIGHLIGHTS' : isLiveStream ? 'LIVE' : 'REPLAY'}
+          </span>
+        </div>
+        <div className="w-px h-5 bg-[#333] shrink-0" />
+
+        {/* Feed title + switcher */}
+        <div className="relative min-w-0">
+          <button onClick={() => switchable && setMenuOpen(v => !v)} disabled={!switchable}
+            className={`flex items-center gap-2 min-w-0 rounded px-1 py-1 ${switchable ? 'hover:bg-white/5' : 'cursor-default'}`}>
+            <span className="text-white font-bold truncate">{stream.title}</span>
+            {stream.quality && <span className="hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#333] text-gray-400 shrink-0">{stream.quality}</span>}
+            {switchable && <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />}
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute left-0 top-full mt-2 z-20 w-80 max-w-[90vw] max-h-[60vh] overflow-y-auto bg-[#151515] border border-[#333] rounded-lg shadow-2xl py-1">
+                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 font-bold">Switch feed</div>
+                {channels.map(c => (
+                  <button key={c.key}
+                    onClick={() => { setMenuOpen(false); if (c.key !== stream.key) onSwitch(streamForChannel(c)); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-white/5 ${c.key === stream.key ? 'text-[#ff1801] font-bold' : 'text-gray-200'}`}>
+                    <Tv className="w-4 h-4 shrink-0 text-gray-500" />
+                    <span className="truncate flex-1">{c.title}</span>
+                    <span className="text-[10px] font-mono text-gray-500 shrink-0">{c.quality}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-3 shrink-0">
+          {canSplit && (
+            <>
+              <span className="hidden md:flex items-center gap-1.5 text-xs text-gray-400">
+                <Activity className="w-3.5 h-3.5 text-[#ff1801]" />
+                {liveSession.name} {liveSession.replay ? 'replay' : 'live'}
+              </span>
+              <button onClick={() => setShowTelemetry(v => !v)} title="Toggle live telemetry (T)"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${showTelemetry ? 'bg-[#ff1801]/10 border-[#ff1801]/50 text-[#ff1801]' : 'border-[#333] text-gray-300 hover:border-gray-500'}`}>
+                {showTelemetry ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                <span className="hidden sm:inline">Telemetry</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
-      <div className="flex-1 relative flex items-center justify-center bg-black">
-        <div className="w-full max-w-6xl aspect-video bg-black shadow-2xl border border-[#222]">
+
+      {/* Body: 70:30 split during a live session, centred feed otherwise */}
+      <div className={`flex-1 min-h-0 flex ${split ? 'flex-col lg:flex-row overflow-y-auto lg:overflow-hidden' : 'items-center justify-center md:p-6'}`}>
+        <div className={split
+          ? 'w-full lg:w-[70%] aspect-video lg:aspect-auto lg:h-full bg-black shrink-0'
+          : 'w-full max-w-6xl max-h-full aspect-video bg-black shadow-2xl md:border border-[#222] md:rounded-lg overflow-hidden'}>
           <VideoPlayer key={stream.url} src={stream.url} type={stream.type} />
         </div>
+        {split && (
+          <aside className="w-full lg:w-[30%] h-[75vh] lg:h-full shrink-0 border-t lg:border-t-0 lg:border-l border-[#333] bg-[#0b0b0b] overflow-hidden">
+            <LiveTelemetry compact />
+          </aside>
+        )}
       </div>
     </div>
   );
@@ -1092,7 +1403,16 @@ const App = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [officialSessions, setOfficialSessions] = useState([]);
   const [feed, setFeed] = useState(null);
+  const [channels, setChannels] = useState([]);
   const now = useNow(5000);
+
+  // Live channel list (metadata only - credentials stay on the server)
+  useEffect(() => {
+    fetch(`${apiBase()}/api/channels`)
+      .then(res => (res.ok ? res.json() : []))
+      .then(data => Array.isArray(data) && setChannels(data))
+      .catch(() => setChannels([]));
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1198,6 +1518,14 @@ const App = () => {
     setActiveStream(stream);
   };
 
+  const closePlayer = useCallback(() => setActiveStream(null), []);
+
+  // Session shown next to the video in the player (a live session, or a
+  // server-side replay used for testing)
+  const liveSession = hero?.state.live
+    ? { name: hero.state.live.name }
+    : feed?.source === 'replay' && feed.session ? { name: feed.session.name, replay: true } : null;
+
   const playHighlights = (race) => {
     // Open YouTube search results for the specific race highlights
     const query = `F1 ${race.season} ${race.raceName} Highlights`;
@@ -1223,7 +1551,7 @@ const App = () => {
         <Navbar />
 
         <main className="pt-24 px-4 md:px-6 max-w-7xl mx-auto">
-          {hero && <Hero race={hero.race} weekend={hero.state} feed={feed} onWatch={openStreamMenu} />}
+          {hero && <Hero race={hero.race} weekend={hero.state} feed={feed} onWatch={openStreamMenu} telemetryPaused={!!activeStream} />}
 
           <DriverStandings />
 
@@ -1251,12 +1579,16 @@ const App = () => {
           onClose={() => setSidebarOpen(false)}
           race={selectedRace}
           isArchive={selectedWeekend?.state.finished}
+          channels={channels}
           onPlay={playStream}
         />
 
         <PlayerModal
           stream={activeStream}
-          onClose={() => setActiveStream(null)}
+          channels={channels}
+          liveSession={liveSession}
+          onSwitch={setActiveStream}
+          onClose={closePlayer}
         />
       </div>
     </>

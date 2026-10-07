@@ -51,8 +51,9 @@ coverage/
 # code and the README belong in this repo.
 # -----------------------------------------------------------------------------
 
-# Live channel registry with real provider credentials (use channels.example.json)
-server/channels.json
+# Live channel registry: server/channels.json IS committed so the Docker image
+# (built in CI from the repo) ships with the channels. Keep an optional local
+# override out of git:
 server/channels.local.json
 
 # IPTV account / credential dumps and playlists

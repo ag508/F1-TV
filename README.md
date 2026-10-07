@@ -59,18 +59,37 @@ npm install
 
 ### 3. Configure Channels (credentials stay server-side)
 
-Provider credentials live **only on the server** in [server/channels.js](server/channels.js)
-and are never sent to the browser (the client references each channel by an
-opaque `key`). This keeps credentials out of the public client bundle. Edit the
-`DEFAULT_CHANNELS` array, or override at runtime without touching code:
+Provider credentials live **only on the server** — the client references each
+channel by an opaque `key` (via `/api/channels`), so credentials never reach the
+browser or the public client bundle. [server/channels.js](server/channels.js)
+loads the channel list, in this order:
 
-```bash
-CHANNELS_FILE=/path/to/channels.json npm start   # same shape as DEFAULT_CHANNELS
+1. `CHANNELS_FILE=/path/to/channels.json` (explicit override)
+2. `server/channels.local.json` (git-ignored local override)
+3. `server/channels.json` (committed — **ships inside the Docker image**)
+4. a built-in placeholder (no real credentials)
+
+To set up: copy [server/channels.example.json](server/channels.example.json) to
+`server/channels.json` and fill in your own provider lines. Each entry:
+
+```json
+{ "key": "f1-primary", "title": "Sky Sports F1 FHD", "quality": "1080p50",
+  "english": true, "profile": "auto",
+  "server": "http://your-provider:8080", "username": "USER", "password": "PASS",
+  "channelId": 12345 }
 ```
 
-Each entry: `{ key, title, quality, english, server, username, password, channelId }`.
 Use one account per entry (each with a free connection slot) so the parallel
-"Check Status" never hits a provider's per-account connection limit.
+"Check Status" never hits a provider's per-account connection limit. `profile`
+is optional: `auto` (default) copies browser-ready H.264 and transcodes HEVC to
+1080p; `source` keeps the source untouched (e.g. a native 4K feed); `1080p`
+always transcodes.
+
+> ⚠️ **Security:** `server/channels.json` is committed so CI can build a
+> self-contained Docker image. That means your provider credentials live in the
+> Git repo and the image. Keep the repo and image **private**, or instead leave
+> `channels.json` out and supply credentials at deploy time via `CHANNELS_FILE`
+> or a mounted `channels.local.json`.
 
 ### 4. Run Development Servers
 
