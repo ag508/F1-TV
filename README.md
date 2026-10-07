@@ -365,7 +365,7 @@ from the live mini-sector timing.
 - `LIVE_REPLAY_SPEED` - Replay speed multiplier (default 1)
 - `LIVE_REPLAY_GPS=0` - Replay without GPS/car data (preview what anonymous viewers get)
 - `HLS_DEFAULT_PROFILE` - Profile for channels that don't set one: `abr` (default), `auto`, `1080p`, `source`
-- `HLS_ABR_LADDER` - Adaptive bitrate renditions as `height:kbps[:fps]` (default `1080:6000,1080:3500,1080:2000:25`)
+- `HLS_ABR_LADDER` - Adaptive bitrate renditions as `height:kbps[:fps]` (default `1080:6000,1080:4000:25,1080:3000,1080:2000:25`)
 - `HLS_HWACCEL` - `auto` (default; use the Intel iGPU if it works), `vaapi`, or `none`
 - `HLS_VAAPI_DEVICE` - GPU render node (default `/dev/dri/renderD128`)
 - `HLS_ABR_SOFTWARE=1` - Allow the ABR ladder on the CPU when there's no GPU (heavy; off by default)
@@ -376,10 +376,26 @@ from the live mini-sector timing.
 ## Adaptive Bitrate & Intel GPU Encoding
 
 Live channels are served as an **adaptive bitrate (ABR)** HLS ladder by default:
-three 1080p renditions (6 / 3.5 / 2 Mbps, the lightest at 25 fps) with
-keyframes aligned at every 2 s segment. The player measures each viewer's
-connection and switches rendition per segment, so a slower connection gets a
-lighter **1080p** stream instead of buffering. If a viewer still falls behind
+four 1080p renditions — 6 Mbps @50, 4 Mbps @25, 3 Mbps @50, 2 Mbps @25 — with
+keyframes aligned at every 2 s segment. Every rendition is tagged with its frame
+rate in the master playlist.
+
+The player ("Auto") combines three rules, like the dash.js reference player:
+
+1. **Device capability (proactive):** hls.js asks the browser's Media
+   Capabilities API whether each rendition decodes smoothly and skips the ones
+   that don't — e.g. a laptop that can't decode 1080p50 starts directly on
+   1080p25 @ 4 Mbps (more bits per frame than the 50 fps top rung), so it never
+   stutters in the first place.
+2. **Dropped frames (reactive):** frames dropped/decoded are sampled every 2 s.
+   Over 8% drops caps quality to the best lower-frame-rate rendition (over 20%
+   with no lower frame rate available: the lightest); after 45 s of smooth
+   playback it probes one rendition higher, doubling the wait each time a probe
+   stutters again. Live catch-up is paused while frames are dropping.
+3. **Bandwidth:** throughput with 25% headroom and fast-reacting averages, so a
+   slower connection moves to a lighter 1080p rendition instead of buffering.
+
+If a viewer still falls behind
 (e.g. after a network blip), playback speeds up to 1.08× until it's back at the
 live edge; after a long outage (>60 s) it jumps to live. Deliberately rewinding
 in the DVR window turns catch-up off until you return to live. The player's

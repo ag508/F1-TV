@@ -411,6 +411,10 @@ const HlsPlayer = ({ src, live }) => {
   // Set when the viewer deliberately rewinds into the DVR window; suppresses
   // the automatic catch-up so we don't fight them.
   const userRewoundRef = useRef(false);
+  const lastDropAtRef = useRef(0);                     // last time frame drops were detected
+  const [dropRate, setDropRate] = useState(0);         // dropped / decoded in the last window
+  const [smoothCap, setSmoothCap] = useState(-1);      // rendition cap imposed for smoothness (-1 = none)
+  const [smoothNotice, setSmoothNotice] = useState(null);
 
   // --- Playback engine (hls.js with resume-in-place recovery) ---
   useEffect(() => {
@@ -457,7 +461,9 @@ const HlsPlayer = ({ src, live }) => {
       hls = new Hls({
         autoStartLoad: !resume,
         lowLatencyMode: false,
-        liveSyncDurationCount: 4,
+        // Sit 5 segments (~10 s) behind live: a bigger cushion absorbs
+        // short bandwidth dips without stalling.
+        liveSyncDurationCount: 5,
         liveDurationInfinity: true,
         maxBufferLength: 30,
         maxMaxBufferLength: 90,
@@ -467,8 +473,10 @@ const HlsPlayer = ({ src, live }) => {
         // switches to a lighter 1080p rendition instead of stalling.
         startLevel: -1,
         abrEwmaDefaultEstimate: 4_000_000,
-        abrBandWidthFactor: 0.8,     // use 80% of measured bandwidth when switching down/staying
-        abrBandWidthUpFactor: 0.6,   // be cautious stepping up
+        abrEwmaFastLive: 2,          // react to bandwidth drops within ~2 segments (default 3)
+        abrEwmaSlowLive: 6,          // shorter memory of past good bandwidth (default 9)
+        abrBandWidthFactor: 0.75,    // keep 25% headroom when choosing/keeping a rendition
+        abrBandWidthUpFactor: 0.55,  // be cautious stepping up
         abrMaxWithRealBitrate: true,
         capLevelToPlayerSize: false, // keep 1080p even in the 70% split view
         testBandwidth: true,
@@ -477,6 +485,7 @@ const HlsPlayer = ({ src, live }) => {
         fragLoadPolicy: HLS_LOAD_POLICY(15000, 60000, 8),
       });
       hlsRef.current = hls;
+      if (import.meta.env.DEV) window.__hls = hls; // debugging aid in `vite dev` only
 
       if (resume) {
         hls.once(Hls.Events.LEVEL_LOADED, (_e, { details }) => {
@@ -573,12 +582,15 @@ const HlsPlayer = ({ src, live }) => {
         const behind = Math.max(0, end - v.currentTime);
         const ahead = bufferedEnd - v.currentTime;
         if (userRewoundRef.current && behind < 3) userRewoundRef.current = false;
+        // Catching up costs ~8% more decoding; hold off while the device is
+        // dropping frames so catch-up never causes stutter itself.
+        const recentDrops = Date.now() - lastDropAtRef.current < 20000;
         if (!userRewoundRef.current && behind > 60) {
           v.currentTime = end; // long outage: rejoin live
           v.playbackRate = 1;
-        } else if (!userRewoundRef.current && behind > 6 && ahead > 4) {
+        } else if (!userRewoundRef.current && !recentDrops && behind > 6 && ahead > 4) {
           if (v.playbackRate !== 1.08) v.playbackRate = 1.08;
-        } else if (v.playbackRate !== 1 && (behind < 1.5 || ahead < 2 || userRewoundRef.current)) {
+        } else if (v.playbackRate !== 1 && (behind < 1.5 || ahead < 2 || userRewoundRef.current || recentDrops)) {
           v.playbackRate = 1;
         }
         setCatchingUp(v.playbackRate > 1);
@@ -613,6 +625,117 @@ const HlsPlayer = ({ src, live }) => {
       clearTimeout(hideTimer.current);
     };
   }, []);
+
+  // --- Smoothness controller (dropped-frames rule) ---
+  // Bandwidth-based ABR can't see when the *device* can't keep up: the video
+  // downloads fine but the decoder/renderer drops frames. Like dash.js's
+  // DroppedFramesRule, sample dropped/decoded frames and cap auto quality below
+  // any rendition that stutters. Unlike hls.js's built-in capLevelOnFPSDrop
+  // (one-way, never recovers), the cap is lifted again after a stable period,
+  // with exponential backoff if the higher rendition stutters again.
+  useEffect(() => {
+    const SAMPLE_MS = 2000;
+    const MIN_FRAMES = 90;        // ~2-4 s of video before judging
+    const DROP_RATIO = 0.08;      // >8% dropped -> step down one rendition
+    const SEVERE_RATIO = 0.2;     // >20% dropped -> go straight to the lightest
+    const STABLE_RATIO = 0.03;    // average <3% over the stable period counts as smooth
+    const s = {
+      lastDropped: 0, lastDecoded: 0, winDropped: 0, winDecoded: 0,
+      level: -2, ignoreUntil: Date.now() + 5000,
+      cap: -1, stableSince: 0, stDropped: 0, stDecoded: 0, backoffMs: 45000, probing: null,
+    };
+    const applyCap = (hls, cap) => {
+      s.cap = cap;
+      hls.autoLevelCapping = cap;
+      setSmoothCap(cap);
+    };
+    const onSeek = () => { s.ignoreUntil = Date.now() + 3000; s.winDropped = s.winDecoded = 0; };
+    const video = videoRef.current;
+    video?.addEventListener('seeking', onSeek);
+
+    const id = setInterval(() => {
+      const v = videoRef.current, hls = hlsRef.current;
+      if (!v || !hls || !v.getVideoPlaybackQuality) return;
+      const q = v.getVideoPlaybackQuality();
+      const dropped = q.droppedVideoFrames - s.lastDropped;
+      const decoded = q.totalVideoFrames - s.lastDecoded;
+      s.lastDropped = q.droppedVideoFrames;
+      s.lastDecoded = q.totalVideoFrames;
+      const now = Date.now();
+
+      // A rendition switch itself can drop a few frames: don't count it
+      if (hls.currentLevel !== s.level) { s.level = hls.currentLevel; s.ignoreUntil = now + 3000; }
+      // Hidden tabs drop frames by design; paused video decodes nothing
+      if (v.paused || document.hidden || now < s.ignoreUntil || decoded <= 0 || dropped < 0) {
+        s.winDropped = s.winDecoded = 0;
+        return;
+      }
+      s.winDropped += dropped;
+      s.winDecoded += decoded;
+      if (s.winDecoded < MIN_FRAMES) return;
+      const ratio = s.winDropped / s.winDecoded;
+      const [winDropped, winDecoded] = [s.winDropped, s.winDecoded];
+      s.winDropped = s.winDecoded = 0;
+      setDropRate(ratio);
+
+      if (!hls.autoLevelEnabled) return; // viewer picked a fixed rendition
+      const level = hls.currentLevel;
+
+      if (ratio > DROP_RATIO) {
+        lastDropAtRef.current = now;
+        if (v.playbackRate !== 1) v.playbackRate = 1;
+        s.stableSince = 0;
+        // A probe up that stutters again: wait longer before the next probe
+        if (s.probing !== null && level >= s.probing) s.backoffMs = Math.min(s.backoffMs * 2, 8 * 60000);
+        s.probing = null;
+        if (level > 0) {
+          // Prefer the best rendition with a lower frame rate than the one
+          // that stutters (keeps bits per frame high); otherwise step down one.
+          const fpsOf = (l) => hls.levels[l]?.frameRate || 50;
+          let lowerFps = -1;
+          for (let l = level - 1; l >= 0; l--) {
+            if (fpsOf(l) < fpsOf(level)) { lowerFps = l; break; }
+          }
+          const target = lowerFps !== -1 ? lowerFps : ratio > SEVERE_RATIO ? 0 : level - 1;
+          applyCap(hls, target);
+          hls.nextLoadLevel = target; // next segment already at the lighter rendition
+          setSmoothNotice(`Frame drops detected (${Math.round(ratio * 100)}%) - lowered quality for smooth playback`);
+        }
+        return;
+      }
+
+      // While capped, judge smoothness on the average over the whole stable
+      // period (single noisy samples don't reset it); then probe one higher.
+      if (s.cap !== -1) {
+        if (!s.stableSince) { s.stableSince = now; s.stDropped = 0; s.stDecoded = 0; }
+        s.stDropped += winDropped;
+        s.stDecoded += winDecoded;
+        if (now - s.stableSince >= s.backoffMs) {
+          const smooth = s.stDropped / Math.max(1, s.stDecoded) < STABLE_RATIO;
+          s.stableSince = 0;
+          if (smooth) {
+            const next = s.cap + 1;
+            s.probing = next;
+            applyCap(hls, next >= hls.levels.length - 1 ? -1 : next);
+          }
+        }
+      }
+      // A probe that has held for a full window is accepted
+      if (s.probing !== null && level >= s.probing && ratio < STABLE_RATIO) s.probing = null;
+    }, SAMPLE_MS);
+
+    return () => {
+      clearInterval(id);
+      video?.removeEventListener('seeking', onSeek);
+    };
+  }, [src]);
+
+  // Hide the "lowered quality" notice after a few seconds
+  useEffect(() => {
+    if (!smoothNotice) return;
+    const id = setTimeout(() => setSmoothNotice(null), 6000);
+    return () => clearTimeout(id);
+  }, [smoothNotice]);
 
   // --- Actions ---
   const togglePlay = () => { const v = videoRef.current; if (v.paused) v.play().catch(() => { }); else v.pause(); };
@@ -696,6 +819,12 @@ const HlsPlayer = ({ src, live }) => {
         className="w-full h-full bg-black object-contain" />
       <PlayerStatus status={status} />
 
+      {smoothNotice && status.phase === 'playing' && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-black/85 border border-white/15 text-[11px] text-gray-200 whitespace-nowrap animate-fade-in">
+          {smoothNotice}
+        </div>
+      )}
+
       {/* Top bar: live state + quality */}
       {ready && (
         <div className={`absolute top-0 inset-x-0 flex items-start justify-between p-3 bg-gradient-to-b from-black/70 to-transparent transition-opacity duration-300 ${hideUi ? 'opacity-0' : 'opacity-100'}`}>
@@ -739,6 +868,10 @@ const HlsPlayer = ({ src, live }) => {
           {live && <StatRow label="Behind live" value={formatDuration(behindLive)} />}
           <StatRow label="DVR window" value={formatDuration(end - start)} />
           <StatRow label="Dropped frames" value={`${stats.dropped} / ${stats.frames}`} />
+          <StatRow label="Drop rate (recent)" value={`${(dropRate * 100).toFixed(1)}%`} />
+          {levels.length > 1 && (
+            <StatRow label="Smoothness cap" value={smoothCap === -1 ? 'none' : `≤ ${levelLabel(levels[smoothCap])}`} />
+          )}
         </div>
       )}
 

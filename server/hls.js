@@ -47,15 +47,17 @@ const ABR_SOFTWARE = process.env.HLS_ABR_SOFTWARE === '1';
 const X264_PRESET = process.env.X264_PRESET || 'veryfast';
 
 // Ladder: comma-separated "height:kbps[:fps]". Default keeps 1080p on every
-// rung; the lightest rung drops to 25 fps, which roughly doubles per-frame
-// quality at low bitrate and halves decode load on weak devices.
+// rung. Two rungs run at 25 fps: halving the frame rate halves decode load on
+// devices that drop frames at 50 fps, while keeping (or raising) the bits per
+// frame - so the player can fix stutter without dropping to a blurrier
+// rendition. 6000/50 -> 120 kb/frame, 4000/25 -> 160, 3000/50 -> 60, 2000/25 -> 80.
 function parseLadder(spec) {
   return spec.split(',').map(s => s.trim()).filter(Boolean).map(rung => {
     const [height, kbps, fps] = rung.split(':').map(Number);
     return { height: height || 1080, kbps: kbps || 4000, fps: fps || null };
   }).sort((a, b) => b.kbps - a.kbps);
 }
-const LADDER = parseLadder(process.env.HLS_ABR_LADDER || '1080:6000,1080:3500,1080:2000:25');
+const LADDER = parseLadder(process.env.HLS_ABR_LADDER || '1080:6000,1080:4000:25,1080:3000,1080:2000:25');
 const SINGLE_KBPS = parseInt(process.env.HLS_1080P_BITRATE || '6000', 10);
 
 // Codecs a browser can play directly inside an MPEG-TS/HLS stream
@@ -114,7 +116,7 @@ function probeSource(url, timeoutMs = 12000) {
     const proc = spawn('ffprobe', [
       '-v', 'error', '-user_agent', UA, '-rw_timeout', '10000000',
       '-analyzeduration', '4000000', '-probesize', '5000000',
-      '-show_entries', 'stream=codec_type,codec_name,width,height', '-of', 'json', url
+      '-show_entries', 'stream=codec_type,codec_name,width,height,avg_frame_rate', '-of', 'json', url
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
     let out = '';
     const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
@@ -127,7 +129,9 @@ function probeSource(url, timeoutMs = 12000) {
         const v = streams.find(s => s.codec_type === 'video');
         const a = streams.find(s => s.codec_type === 'audio');
         if (!v) return resolve(null);
-        resolve({ vcodec: v.codec_name, height: v.height || 0, acodec: a?.codec_name });
+        const [num, den] = String(v.avg_frame_rate || '0/1').split('/').map(Number);
+        const fps = den ? num / den : 0;
+        resolve({ vcodec: v.codec_name, height: v.height || 0, acodec: a?.codec_name, fps: fps > 0 && fps < 121 ? fps : null });
       } catch { resolve(null); }
     });
   });
@@ -274,6 +278,7 @@ class HlsSession {
     // Single rendition, copying the source when it's already browser-ready H.264 <=1080p
     const singleChain = async () => {
       const probe = await probeSource(this.sourceUrl);
+      if (probe?.fps) this.sourceFps = probe.fps;
       const canCopy = probe && BROWSER_VIDEO.has(probe.vcodec) && probe.height > 0 && probe.height <= 1088;
       const note = probe ? `(src ${probe.vcodec} ${probe.height}p)` : '';
       return [
@@ -456,7 +461,18 @@ function registerRoutes(app, resolveChannel = () => null) {
 
     // Every URI (variant playlist or segment) is served from the session's
     // directory through an opaque id, so credentials never appear in requests.
-    const body = text.replace(/^(?!#)(\S+)$/gm, `s/${session.id}/$1`);
+    let body = text.replace(/^(?!#)(\S+)$/gm, `s/${session.id}/$1`);
+    // FFmpeg doesn't write FRAME-RATE into the master playlist; tag every
+    // variant (they're written in ladder order). hls.js orders renditions by
+    // height, then frame rate, then bitrate, so with all of them tagged the
+    // reduced-fps rungs sort below the full-rate ones - which lets the player
+    // cap a device that stutters at 50 fps to the 25 fps renditions only.
+    let variant = 0;
+    body = body.replace(/^#EXT-X-STREAM-INF:(.*)$/gm, (line) => {
+      const rung = LADDER[variant++];
+      const fps = rung?.fps || session.sourceFps || 50;
+      return line.includes('FRAME-RATE') ? line : `${line},FRAME-RATE=${fps.toFixed(3)}`;
+    });
     res.set(PLAYLIST_HEADERS).send(body);
   });
 

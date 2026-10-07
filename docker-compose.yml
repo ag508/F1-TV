@@ -12,7 +12,7 @@ services:
       # Adaptive bitrate: 1080p renditions encoded on the Intel iGPU
       - HLS_HWACCEL=auto            # auto | vaapi | none
       - HLS_DEFAULT_PROFILE=abr     # abr | auto | 1080p | source
-      - HLS_ABR_LADDER=1080:6000,1080:3500,1080:2000:25
+      - HLS_ABR_LADDER=1080:6000,1080:4000:25,1080:3000,1080:2000:25
     # Give the container the Intel GPU (UHD 630) for VAAPI / Quick Sync
     devices:
       - /dev/dri:/dev/dri
