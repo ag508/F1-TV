@@ -1,0 +1,33 @@
+[
+  {
+    "key": "f1-primary",
+    "title": "Sky Sports F1 FHD (Primary)",
+    "quality": "1080p50",
+    "english": true,
+    "server": "http://your-provider.example:8080",
+    "username": "YOUR_USERNAME",
+    "password": "YOUR_PASSWORD",
+    "channelId": 12345
+  },
+  {
+    "key": "f1-backup1",
+    "title": "UK: Sky Sports F1 FHD (Backup 1)",
+    "quality": "1080p",
+    "english": true,
+    "server": "http://another-provider.example:8080",
+    "username": "YOUR_USERNAME",
+    "password": "YOUR_PASSWORD",
+    "channelId": 67890
+  },
+  {
+    "key": "f1-backup2",
+    "title": "Sky Sports F1 4K (Backup 2)",
+    "quality": "4K",
+    "english": true,
+    "profile": "source",
+    "server": "http://uhd-provider.example:8080",
+    "username": "YOUR_USERNAME",
+    "password": "YOUR_PASSWORD",
+    "channelId": 24680
+  }
+]

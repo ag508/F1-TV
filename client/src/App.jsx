@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, MapPin, Play, Clock, Trophy, Tv, AlertCircle, X, RefreshCw, Server, ChevronRight, Signal, Battery, Info, History, Film, Timer, BarChart3, Youtube, Users } from 'lucide-react';
+import { Calendar, MapPin, Play, Trophy, Tv, AlertCircle, X, RefreshCw, Server, Signal, Info, Film, Timer, BarChart3, Youtube, Users, CheckCircle2, Radio, Zap, Monitor } from 'lucide-react';
 import mpegts from 'mpegts.js';
+import Hls from 'hls.js';
+import LiveTelemetry from './components/LiveTelemetry';
+import { apiBase, weekendState, feedStatusLabel } from './lib/schedule';
 
 // --- Styles & Fonts ---
 const GlobalStyles = () => (
@@ -233,121 +236,287 @@ const CircuitMap = ({ circuitId }) => {
   );
 };
 
-// --- Video Player Component ---
-const VideoPlayer = ({ src, type }) => {
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+// --- Video Player Components ---
 
-  // Handle MPEG-TS streams with mpegts.js
-  const mpegtsPlayerRef = useRef(null);
-
-  useEffect(() => {
-    if (type !== 'mpegts' || !videoRef.current) return;
-
-    const video = videoRef.current;
-
-    // Check if mpegts.js is supported
-    if (!mpegts.isSupported()) {
-      setError('MPEG-TS playback is not supported in this browser');
-      setLoading(false);
-      return;
-    }
-
-    console.log('Initializing mpegts.js player with source:', src);
-
-    // Destroy previous player if exists
-    if (mpegtsPlayerRef.current) {
-      mpegtsPlayerRef.current.destroy();
-      mpegtsPlayerRef.current = null;
-    }
-
-    // Create mpegts.js player with optimized live streaming config
-    const player = mpegts.createPlayer({
-      type: 'mpegts',
-      url: src,
-      isLive: true,
-      enableStashBuffer: false,
-      stashInitialSize: 128,
-      liveBufferLatencyChasing: true,
-      liveBufferLatencyMaxLatency: 3,
-      liveBufferLatencyMinRemain: 0.3
-    }, {
-      enableWorker: false,
-      enableStashBuffer: false,
-      autoCleanupSourceBuffer: true
-    });
-
-    mpegtsPlayerRef.current = player;
-
-    // Attach to video element
-    player.attachMediaElement(video);
-
-    // Event listeners
-    player.on(mpegts.Events.LOADING_COMPLETE, () => {
-      console.log('MPEG-TS loading complete');
-    });
-
-    player.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
-      console.log('MPEG-TS media info:', mediaInfo);
-      setLoading(false);
-    });
-
-    player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-      console.error('MPEG-TS error:', { errorType, errorDetail, errorInfo });
-      console.error('Stream URL:', src);
-      setError(`Stream error: ${errorType} (${errorDetail}). Check server logs for details.`);
-      setLoading(false);
-    });
-
-    // Load and play
-    player.load();
-    player.play().catch(e => {
-      console.log('Autoplay prevented:', e);
-    });
-
-    // Cleanup
-    return () => {
-      if (mpegtsPlayerRef.current) {
-        mpegtsPlayerRef.current.destroy();
-        mpegtsPlayerRef.current = null;
-      }
-    };
-  }, [src, type]);
-
-  if (type === 'mpegts') {
+const PlayerStatus = ({ status }) => {
+  if (!status || status.phase === 'playing') return null;
+  if (status.phase === 'loading') {
     return (
-      <div className="relative w-full h-full bg-black">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-            <div className="text-center">
-              <RefreshCw className="w-12 h-12 text-[#ff1801] animate-spin mx-auto mb-4" />
-              <p className="text-white text-sm">Loading stream...</p>
-              <p className="text-gray-400 text-xs mt-2">Connecting to stream server...</p>
-            </div>
-          </div>
-        )}
-        <video
-          ref={videoRef}
-          controls
-          autoPlay
-          className="w-full h-full bg-black object-contain"
-          playsInline
-        />
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black">
-            <div className="text-center p-8">
-              <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-              <p className="text-white text-lg mb-2">Stream Error</p>
-              <p className="text-gray-400 text-sm">{error}</p>
-              <p className="text-gray-500 text-xs mt-4">Check server logs for details</p>
-            </div>
-          </div>
-        )}
+      <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+        <div className="text-center">
+          <RefreshCw className="w-12 h-12 text-[#ff1801] animate-spin mx-auto mb-4" />
+          <p className="text-white text-sm">Loading stream...</p>
+          <p className="text-gray-400 text-xs mt-2">{status.detail || 'Connecting to stream server...'}</p>
+        </div>
       </div>
     );
   }
+  if (status.phase === 'error') {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+        <div className="text-center p-8">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <p className="text-white text-lg mb-2">Stream Error</p>
+          <p className="text-gray-400 text-sm">{status.detail}</p>
+        </div>
+      </div>
+    );
+  }
+  // Buffering / reconnecting: keep the video on screen, show a small chip
+  return (
+    <div className="absolute top-3 right-3 z-10 flex items-center gap-2 bg-black/80 border border-[#333] rounded-full px-3 py-1.5 text-xs text-white">
+      <RefreshCw className="w-3 h-3 text-[#ff1801] animate-spin" />
+      {status.phase === 'reconnecting' ? `Reconnecting${status.attempt > 1 ? ` (attempt ${status.attempt})` : ''}…` : 'Buffering…'}
+      {status.detail && <span className="text-gray-400 hidden md:inline">{status.detail}</span>}
+    </div>
+  );
+};
+
+// MPEG-TS restream (mpegts.js). Live-only, so on a drop or a long stall the
+// player is rebuilt automatically and rejoins the live edge without closing.
+const MpegtsPlayer = ({ src }) => {
+  const videoRef = useRef(null);
+  const supported = mpegts.isSupported();
+  const [status, setStatus] = useState(supported
+    ? { phase: 'loading' }
+    : { phase: 'error', detail: 'MPEG-TS playback is not supported in this browser' });
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !supported) return;
+
+    let player = null;
+    let retryTimer = null;
+    let attempt = 0;
+    let disposed = false;
+    let lastTime = -1;
+    let lastProgress = Date.now();
+
+    const create = () => {
+      if (disposed) return;
+      player?.destroy();
+      player = mpegts.createPlayer({ type: 'mpegts', url: src, isLive: true }, {
+        enableWorker: true,
+        enableStashBuffer: true,
+        stashInitialSize: 384 * 1024,
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyMaxLatency: 8,
+        liveBufferLatencyMinRemain: 2,
+        autoCleanupSourceBuffer: true,
+      });
+      player.attachMediaElement(video);
+      player.on(mpegts.Events.MEDIA_INFO, () => { attempt = 0; setStatus({ phase: 'playing' }); });
+      player.on(mpegts.Events.ERROR, (type, detail) => reconnect(`${type}: ${detail}`));
+      // A live stream never "completes" - the server ended it, so reconnect
+      player.on(mpegts.Events.LOADING_COMPLETE, () => reconnect('Stream ended'));
+      player.load();
+      player.play()?.catch?.(() => { });
+    };
+
+    const reconnect = (reason) => {
+      if (disposed || retryTimer) return;
+      attempt += 1;
+      console.warn('[Player] Reconnecting:', reason);
+      setStatus({ phase: 'reconnecting', attempt, detail: reason });
+      retryTimer = setTimeout(() => { retryTimer = null; create(); }, Math.min(1000 * 2 ** (attempt - 1), 10000));
+    };
+
+    // Stall watchdog: playback not advancing for 12s (and not paused by the user)
+    const watchdog = setInterval(() => {
+      if (video.paused || video.currentTime !== lastTime) {
+        if (video.currentTime !== lastTime) setStatus(s => (s.phase === 'buffering' ? { phase: 'playing' } : s));
+        lastTime = video.currentTime;
+        lastProgress = Date.now();
+        return;
+      }
+      const stalledFor = Date.now() - lastProgress;
+      if (stalledFor > 3000) setStatus(s => (s.phase === 'playing' ? { phase: 'buffering' } : s));
+      if (stalledFor > 12000) {
+        lastProgress = Date.now();
+        reconnect('Buffering too long');
+      }
+    }, 1000);
+
+    create();
+    return () => {
+      disposed = true;
+      clearInterval(watchdog);
+      clearTimeout(retryTimer);
+      player?.destroy();
+    };
+  }, [src, supported]);
+
+  return (
+    <div className="relative w-full h-full bg-black">
+      <PlayerStatus status={status} />
+      <video ref={videoRef} controls autoPlay playsInline className="w-full h-full bg-black object-contain" />
+    </div>
+  );
+};
+
+const HLS_LOAD_POLICY = (ttfb, total, retries) => ({
+  default: {
+    maxTimeToFirstByteMs: ttfb,
+    maxLoadTimeMs: total,
+    timeoutRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 5000 },
+    errorRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+  },
+});
+
+// HLS player with DVR: the server keeps the last ~10 minutes of segments, so
+// when the connection drops or buffers we resume from the exact segment we were
+// on instead of jumping ahead and losing part of the session.
+const HlsPlayer = ({ src, live }) => {
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+  const [status, setStatus] = useState(() =>
+    Hls.isSupported() || document.createElement('video').canPlayType('application/vnd.apple.mpegurl')
+      ? { phase: 'loading' }
+      : { phase: 'error', detail: 'HLS is not supported in this browser' });
+  const [behindLive, setBehindLive] = useState(0);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
+    if (!Hls.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari / iOS: native HLS has its own retry logic
+        video.src = src;
+        const onPlaying = () => setStatus({ phase: 'playing' });
+        const onWaiting = () => setStatus({ phase: 'buffering' });
+        video.addEventListener('playing', onPlaying);
+        video.addEventListener('waiting', onWaiting);
+        return () => {
+          video.removeEventListener('playing', onPlaying);
+          video.removeEventListener('waiting', onWaiting);
+          video.removeAttribute('src');
+          video.load();
+        };
+      }
+      return; // unsupported: error state set at mount
+    }
+
+    let hls = null;
+    let disposed = false;
+    let rebuildTimer = null;
+    let attempt = 0;
+    let mediaRecoveries = 0;
+    let lastTime = -1;
+    let lastProgress = Date.now();
+    let nudged = false;
+
+    // Where are we in the broadcast? (segment sequence number + offset)
+    const currentPosition = () => {
+      const details = hls?.levels?.[hls.currentLevel]?.details || hls?.levels?.[0]?.details;
+      const frag = details?.fragments?.find(f => video.currentTime >= f.start && video.currentTime < f.start + f.duration);
+      return frag ? { sn: frag.sn, offset: video.currentTime - frag.start } : null;
+    };
+
+    const create = (resume) => {
+      if (disposed) return;
+      hls?.destroy();
+      hls = new Hls({
+        autoStartLoad: !resume,
+        lowLatencyMode: false,
+        liveSyncDurationCount: 4,
+        liveDurationInfinity: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 90,
+        backBufferLength: 600,
+        manifestLoadPolicy: HLS_LOAD_POLICY(30000, 30000, 12),
+        playlistLoadPolicy: HLS_LOAD_POLICY(15000, 20000, 12),
+        fragLoadPolicy: HLS_LOAD_POLICY(15000, 60000, 8),
+      });
+      hlsRef.current = hls;
+
+      if (resume) {
+        hls.once(Hls.Events.LEVEL_LOADED, (_e, { details }) => {
+          const frag = details.fragments.find(f => f.sn === resume.sn);
+          hls.startLoad(frag ? frag.start + resume.offset : -1);
+        });
+      }
+      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => { }));
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        attempt = 0;
+        mediaRecoveries = 0;
+        setStatus(s => (s.phase === 'loading' || s.phase === 'reconnecting' ? { phase: 'playing' } : s));
+      });
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 3) {
+          mediaRecoveries += 1;
+          hls.recoverMediaError();
+          return;
+        }
+        rebuild(`${data.type}: ${data.details}`);
+      });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+    };
+
+    const rebuild = (reason) => {
+      if (disposed || rebuildTimer) return;
+      const resume = currentPosition();
+      attempt += 1;
+      console.warn('[Player] Rebuilding HLS player:', reason, resume);
+      setStatus({ phase: 'reconnecting', attempt, detail: resume ? 'Resuming where you left off' : reason });
+      rebuildTimer = setTimeout(() => { rebuildTimer = null; create(resume); }, Math.min(1000 * 2 ** (attempt - 1), 10000));
+    };
+
+    const watchdog = setInterval(() => {
+      if (hls?.liveSyncPosition) setBehindLive(Math.max(0, hls.liveSyncPosition - video.currentTime));
+      if (video.paused || video.currentTime !== lastTime) {
+        if (video.currentTime !== lastTime) setStatus(s => (s.phase === 'buffering' ? { phase: 'playing' } : s));
+        lastTime = video.currentTime;
+        lastProgress = Date.now();
+        nudged = false;
+        return;
+      }
+      const stalledFor = Date.now() - lastProgress;
+      if (stalledFor > 3000) setStatus(s => (s.phase === 'playing' ? { phase: 'buffering' } : s));
+      if (stalledFor > 10000 && !nudged) {
+        nudged = true; // first try: restart loading at the current position
+        hls?.startLoad(video.currentTime);
+      } else if (stalledFor > 25000) {
+        lastProgress = Date.now();
+        rebuild('Playback stalled');
+      }
+    }, 1000);
+
+    create(null);
+    return () => {
+      disposed = true;
+      clearInterval(watchdog);
+      clearTimeout(rebuildTimer);
+      hls?.destroy();
+      hlsRef.current = null;
+    };
+  }, [src]);
+
+  const goLive = () => {
+    const hls = hlsRef.current;
+    if (hls?.liveSyncPosition) videoRef.current.currentTime = hls.liveSyncPosition;
+    videoRef.current.play().catch(() => { });
+  };
+
+  return (
+    <div className="relative w-full h-full bg-black">
+      <PlayerStatus status={status} />
+      <video ref={videoRef} controls autoPlay playsInline className="w-full h-full bg-black object-contain" />
+      {live && status.phase !== 'loading' && (
+        <button onClick={goLive}
+          className={`absolute top-3 left-3 z-10 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold border ${behindLive > 15 ? 'bg-black/80 border-[#333] text-gray-300 hover:text-white' : 'bg-[#ff1801]/90 border-[#ff1801] text-white'}`}>
+          <span className={`w-2 h-2 rounded-full ${behindLive > 15 ? 'bg-gray-500' : 'bg-white'}`} />
+          {behindLive > 15 ? `-${Math.floor(behindLive / 60)}:${String(Math.floor(behindLive % 60)).padStart(2, '0')} · GO LIVE` : 'LIVE'}
+        </button>
+      )}
+    </div>
+  );
+};
+
+const VideoPlayer = ({ src, type }) => {
+  if (type === 'mpegts') return <MpegtsPlayer src={src} />;
 
   if (type === 'youtube') {
     // Robust Youtube Embedding
@@ -383,165 +552,7 @@ const VideoPlayer = ({ src, type }) => {
     );
   }
 
-  // HLS Player Logic with improved error handling
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || type === 'youtube' || !src) return;
-
-    setLoading(true);
-    setError(null);
-
-    const loadHls = async () => {
-      try {
-        // Check if browser has native HLS support (Safari, iOS)
-        if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          console.log('Using native HLS support');
-          video.src = src;
-          video.addEventListener('loadeddata', () => setLoading(false));
-          video.addEventListener('error', (e) => {
-            console.error('Native HLS error:', e);
-            setError('Failed to load stream. Please try another quality.');
-            setLoading(false);
-          });
-        } else {
-          // Load HLS.js for other browsers
-          if (!window.Hls) {
-            console.log('Loading HLS.js library...');
-            const script = document.createElement('script');
-            script.src = "https://cdn.jsdelivr.net/npm/hls.js@latest";
-            script.async = true;
-            script.onload = () => {
-              console.log('HLS.js loaded successfully');
-              initHls(video);
-            };
-            script.onerror = () => {
-              setError('Failed to load video player library');
-              setLoading(false);
-            };
-            document.body.appendChild(script);
-          } else {
-            initHls(video);
-          }
-        }
-      } catch (err) {
-        console.error('HLS loading error:', err);
-        setError('Error initializing video player');
-        setLoading(false);
-      }
-    };
-
-    const initHls = (videoEl) => {
-      if (!window.Hls.isSupported()) {
-        setError('HLS is not supported in this browser');
-        setLoading(false);
-        return;
-      }
-
-      console.log('Initializing HLS.js with source:', src);
-
-      // Clean up previous HLS instance
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-
-      const hls = new window.Hls({
-        debug: true,
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        xhrSetup: function (xhr) {
-          // Add custom headers for Xstream token URLs
-          // Note: User-Agent can't be set in browser XMLHttpRequest due to security restrictions
-          // The browser will send its default User-Agent
-          xhr.withCredentials = false;  // Set to false to avoid CORS preflight
-        },
-      });
-
-      hlsRef.current = hls;
-
-      hls.on(window.Hls.Events.MEDIA_ATTACHED, () => {
-        console.log('Video element attached to HLS');
-      });
-
-      hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-        console.log('Manifest parsed, starting playback');
-        setLoading(false);
-        videoEl.play().catch(e => {
-          console.log('Autoplay prevented:', e);
-        });
-      });
-
-      hls.on(window.Hls.Events.ERROR, (_event, data) => {
-        console.error('HLS Error:', data);
-        if (data.fatal) {
-          switch (data.type) {
-            case window.Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('Network error, attempting to recover...');
-              hls.startLoad();
-              break;
-            case window.Hls.ErrorTypes.MEDIA_ERROR:
-              console.log('Media error, attempting to recover...');
-              hls.recoverMediaError();
-              break;
-            default:
-              setError('Fatal error: Unable to play stream. Please try another channel.');
-              setLoading(false);
-              hls.destroy();
-              break;
-          }
-        }
-      });
-
-      hls.loadSource(src);
-      hls.attachMedia(videoEl);
-    };
-
-    loadHls();
-
-    // Cleanup function
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, [src, type]);
-
-  if (error) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-black">
-        <div className="text-center p-8">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <p className="text-white text-lg mb-2">Stream Error</p>
-          <p className="text-gray-400 text-sm">{error}</p>
-          <p className="text-gray-500 text-xs mt-4">Check console for details</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full h-full bg-black">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-          <div className="text-center">
-            <RefreshCw className="w-12 h-12 text-[#ff1801] animate-spin mx-auto mb-4" />
-            <p className="text-white text-sm">Loading stream...</p>
-          </div>
-        </div>
-      )}
-      <video
-        ref={videoRef}
-        controls
-        autoPlay
-        className="w-full h-full bg-black object-contain"
-        playsInline
-        onCanPlay={() => setLoading(false)}
-      />
-    </div>
-  );
+  return <HlsPlayer src={src} live={type === 'hls-live'} />;
 };
 
 // --- Driver Standings Component ---
@@ -553,7 +564,7 @@ const DriverStandings = () => {
     fetch('https://api.jolpi.ca/ergast/f1/current/driverStandings.json')
       .then(res => res.json())
       .then(data => {
-        setStandings(data.MRData.StandingsTable.StandingsLists[0]?.DriverStandings.slice(0, 5) || []);
+        setStandings(data.MRData.StandingsTable.StandingsLists[0]?.DriverStandings || []);
       })
       .catch(err => console.error("Error fetching standings:", err))
       .finally(() => setLoading(false));
@@ -567,31 +578,32 @@ const DriverStandings = () => {
         <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
           <Users className="w-5 h-5 md:w-6 md:h-6 text-[#ff1801]" /> Driver Standings
         </h2>
-        <div className="text-xs text-gray-500 font-mono">LIVE DATA</div>
+        <div className="text-xs text-gray-500 font-mono">{standings.length} DRIVERS · LIVE DATA</div>
       </div>
 
-      <div className="bg-[#151515] border border-[#333] rounded-xl overflow-hidden overflow-x-auto">
+      {/* Same footprint as the old top-5 table: header + 5 rows visible, the rest scrolls inside */}
+      <div className="bg-[#151515] border border-[#333] rounded-xl overflow-auto max-h-[357px]">
         <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
-          <thead>
-            <tr className="bg-[#1a1a1a] text-xs uppercase text-gray-400 border-b border-[#333]">
-              <th className="p-4 font-bold">Pos</th>
-              <th className="p-4 font-bold">Driver</th>
-              <th className="p-4 font-bold">Constructor</th>
-              <th className="p-4 font-bold text-right">Wins</th>
-              <th className="p-4 font-bold text-right">Points</th>
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[#1a1a1a] text-xs uppercase text-gray-400 border-b border-[#333] h-12">
+              <th className="px-4 font-bold">Pos</th>
+              <th className="px-4 font-bold">Driver</th>
+              <th className="px-4 font-bold">Constructor</th>
+              <th className="px-4 font-bold text-right">Wins</th>
+              <th className="px-4 font-bold text-right">Points</th>
             </tr>
           </thead>
           <tbody className="text-sm">
             {standings.map((driver) => (
-              <tr key={driver.position} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                <td className="p-4 font-mono text-[#ff1801] font-bold">{driver.position}</td>
-                <td className="p-4 font-bold text-white flex items-center gap-2">
-                  <span className={`flag-icon flag-icon-${driver.Driver.nationality.toLowerCase()}`}></span>
+              <tr key={driver.Driver.driverId} className="border-b border-white/5 hover:bg-white/5 transition-colors h-[61px]">
+                <td className="px-4 font-mono text-[#ff1801] font-bold">{driver.position || driver.positionText}</td>
+                <td className="px-4 font-bold text-white">
+                  <span className={`flag-icon flag-icon-${driver.Driver.nationality.toLowerCase()} mr-2`}></span>
                   {driver.Driver.givenName} {driver.Driver.familyName}
                 </td>
-                <td className="p-4 text-gray-400">{driver.Constructors[0].name}</td>
-                <td className="p-4 text-right font-mono text-gray-500">{driver.wins}</td>
-                <td className="p-4 text-right font-bold text-white font-mono text-lg">{driver.points}</td>
+                <td className="px-4 text-gray-400">{driver.Constructors[0].name}</td>
+                <td className="px-4 text-right font-mono text-gray-500">{driver.wins}</td>
+                <td className="px-4 text-right font-bold text-white font-mono text-lg">{driver.points}</td>
               </tr>
             ))}
           </tbody>
@@ -623,22 +635,22 @@ const Navbar = () => (
 );
 
 const RaceCountdown = ({ date }) => {
-  const [time, setTime] = useState({ d: 0, h: 0, m: 0, s: 0 });
+  const calc = () => {
+    const diff = Math.max(0, new Date(date) - new Date());
+    return {
+      d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      h: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      m: Math.floor((diff / 1000 / 60) % 60),
+      s: Math.floor((diff / 1000) % 60),
+    };
+  };
+  const [time, setTime] = useState(calc);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const diff = new Date(date) - now;
-      if (diff < 0) return clearInterval(interval);
-
-      setTime({
-        d: Math.floor(diff / (1000 * 60 * 60 * 24)),
-        h: Math.floor((diff / (1000 * 60 * 60)) % 24),
-        m: Math.floor((diff / 1000 / 60) % 60),
-        s: Math.floor((diff / 1000) % 60),
-      });
-    }, 1000);
+    setTime(calc());
+    const interval = setInterval(() => setTime(calc()), 1000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
   return (
@@ -653,22 +665,8 @@ const RaceCountdown = ({ date }) => {
   );
 };
 
-const SessionList = ({ race }) => {
-  if (!race) return null;
-
-  const formatSession = (dateStr, timeStr) => {
-    if (!dateStr || !timeStr) return "TBA";
-    const d = new Date(`${dateStr}T${timeStr}`);
-    return {
-      day: d.toLocaleDateString(undefined, { weekday: 'short' }),
-      time: d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-    };
-  };
-
-  const sessions = [
-    { name: "Qualifying", ...formatSession(race.Qualifying?.date, race.Qualifying?.time), active: false },
-    { name: "Race", ...formatSession(race.date, race.time), active: true },
-  ].filter(s => s.day !== "TBA");
+const SessionList = ({ sessions }) => {
+  if (!sessions?.length) return null;
 
   return (
     <div className="mt-4 bg-black/40 rounded-lg p-3 border border-[#333]">
@@ -676,12 +674,22 @@ const SessionList = ({ race }) => {
         <Timer className="w-3 h-3" /> Schedule
       </h4>
       <div className="space-y-1">
-        {sessions.map((session, idx) => (
-          <div key={idx} className={`session-row text-sm ${session.active ? 'text-white font-bold' : 'text-gray-400'}`}>
-            <span>{session.name}</span>
+        {sessions.map((session) => (
+          <div key={session.key} className={`session-row text-sm ${session.phase === 'live' ? 'text-white font-bold' : session.phase === 'done' ? 'text-gray-600' : 'text-gray-300'}`}>
+            <span className="flex items-center gap-2">
+              {session.phase === 'live' && <span className="live-indicator" />}
+              {session.phase === 'done' && <CheckCircle2 className="w-3 h-3" />}
+              {session.name}
+            </span>
             <div className="flex gap-2 font-mono text-xs items-center">
-              <span className="text-[#ff1801]">{session.day}</span>
-              <span>{session.time}</span>
+              {session.phase === 'live' ? (
+                <span className="text-[#ff1801] font-bold">LIVE NOW</span>
+              ) : (
+                <>
+                  <span className={session.phase === 'done' ? '' : 'text-[#ff1801]'}>{session.start.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+                  <span>{session.start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                </>
+              )}
             </div>
           </div>
         ))}
@@ -690,25 +698,37 @@ const SessionList = ({ race }) => {
   );
 };
 
-const Hero = ({ race, onWatch }) => {
+const Hero = ({ race, weekend, feed, onWatch }) => {
   if (!race) return null;
+  const { live, next, sessions } = weekend;
+  const replay = feed?.source === 'replay' && feed.session;
+  const showTelemetry = !!live || !!replay;
+  const liveFeedSession = feed?.session && live && feed.session.name === live.name ? feed.session : null;
+
   return (
-    <section className="relative rounded-2xl overflow-hidden border border-[#333] bg-[#101010] mb-8 md:mb-12 shadow-2xl grid grid-cols-1 lg:grid-cols-12 flex flex-col lg:flex-row">
-      <div className="absolute inset-0 lg:col-span-12 bg-[url('https://media.formula1.com/image/upload/f_auto,c_limit,w_1440,q_auto/f_auto/q_auto/content/dam/fom-website/manual/Misc/2021-Master-Folder/F1%202021%20Generic/F1_Generic_01')] bg-cover bg-center opacity-20"></div>
-      <div className="absolute inset-0 lg:col-span-12 bg-gradient-to-r from-black via-black/90 to-black/40"></div>
+    <section className="relative rounded-2xl overflow-hidden border border-[#333] bg-[#101010] mb-8 md:mb-12 shadow-2xl grid grid-cols-1 lg:grid-cols-12">
+      <div className="absolute inset-0 bg-[url('https://media.formula1.com/image/upload/f_auto,c_limit,w_1440,q_auto/f_auto/q_auto/content/dam/fom-website/manual/Misc/2021-Master-Folder/F1%202021%20Generic/F1_Generic_01')] bg-cover bg-center opacity-20"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-black via-black/90 to-black/40"></div>
 
       {/* Left Content: Race Info (7 cols) */}
       <div className="relative z-10 p-6 md:p-10 lg:col-span-7 flex flex-col justify-center min-h-[300px]">
-        <div className="flex items-center gap-2 text-[#ff1801] font-bold uppercase tracking-widest text-xs md:text-sm mb-3">
-          <Trophy className="w-3 h-3 md:w-4 md:h-4" /> Next Grand Prix
-        </div>
+        {live ? (
+          <div className="flex items-center gap-3 text-[#ff1801] font-bold uppercase tracking-widest text-xs md:text-sm mb-3">
+            <span className="live-indicator" /> {live.name} is live
+            {liveFeedSession && <span className="text-gray-400 normal-case tracking-normal font-semibold">· {feedStatusLabel(liveFeedSession.status)}</span>}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-[#ff1801] font-bold uppercase tracking-widest text-xs md:text-sm mb-3">
+            <Trophy className="w-3 h-3 md:w-4 md:h-4" /> {sessions.some(s => s.phase === 'done') ? 'This Weekend' : 'Next Grand Prix'}
+          </div>
+        )}
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white italic leading-none mb-4">
           {race.raceName.replace("Grand Prix", "")} <br />
           <span className="text-white text-stroke">GP</span>
         </h1>
         <div className="flex flex-wrap items-center gap-3 md:gap-4 text-gray-400 text-base md:text-lg mb-6">
-          <span className="flex items-center gap-2"><MapPin className="w-4 h-4 md:w-5 md:h-5" /> {race.Circuit.CircuitName}</span>
-          <span className="flex items-center gap-2"><Calendar className="w-4 h-4 md:w-5 md:h-5" /> {new Date(race.date).toLocaleDateString()}</span>
+          <span className="flex items-center gap-2"><MapPin className="w-4 h-4 md:w-5 md:h-5" /> {race.Circuit.circuitName || race.Circuit.CircuitName || race.Circuit.Location?.locality}</span>
+          <span className="flex items-center gap-2"><Calendar className="w-4 h-4 md:w-5 md:h-5" /> {new Date(`${race.date}T${race.time || '00:00:00Z'}`).toLocaleDateString()}</span>
         </div>
         <div className="flex gap-4">
           <button onClick={() => onWatch(race)} className="f1-btn-primary px-6 md:px-8 py-3 rounded flex items-center gap-2 shadow-lg shadow-red-900/20 text-sm md:text-base w-full md:w-auto justify-center">
@@ -720,18 +740,42 @@ const Hero = ({ race, onWatch }) => {
       {/* Right Content: Map & Timer (5 cols) */}
       <div className="relative z-10 lg:col-span-5 border-t lg:border-t-0 lg:border-l border-[#333] bg-black/20 backdrop-blur-sm flex flex-col">
         <div className="flex-1 flex flex-col p-4 md:p-6">
-          <CircuitMap circuitId={race.Circuit.circuitId} />
+          {!showTelemetry && <CircuitMap circuitId={race.Circuit.circuitId} />}
 
           <div className="mt-auto pt-4 md:pt-0">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest">Lights Out</h3>
-              <span className="text-[#ff1801] text-xs font-mono">LOCAL TIME</span>
-            </div>
-            <RaceCountdown date={`${race.date}T${race.time}`} />
-            <SessionList race={race} />
+            {live ? (
+              <div className="bg-[#ff1801]/10 border border-[#ff1801]/40 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-[#ff1801] text-xs font-bold uppercase tracking-widest flex items-center gap-2"><Radio className="w-3 h-3" /> On air</div>
+                  <div className="text-white text-2xl font-black italic">{live.name}</div>
+                  <div className="text-gray-400 text-xs">Stays live until the session is finalised</div>
+                </div>
+                <span className="live-indicator" />
+              </div>
+            ) : next ? (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest">
+                    {next.key === 'R' ? 'Lights Out' : `${next.name} starts in`}
+                  </h3>
+                  <span className="text-[#ff1801] text-xs font-mono">LOCAL TIME</span>
+                </div>
+                <RaceCountdown date={next.start.toISOString()} />
+              </>
+            ) : (
+              <div className="text-gray-400 text-sm">Season complete</div>
+            )}
+            <SessionList sessions={sessions} />
           </div>
         </div>
       </div>
+
+      {/* Live telemetry for the running session */}
+      {showTelemetry && (
+        <div className="relative z-10 lg:col-span-12 border-t border-[#333] bg-[#0b0b0b]/95">
+          <LiveTelemetry />
+        </div>
+      )}
     </section>
   );
 };
@@ -823,142 +867,91 @@ const RaceCard = ({ race, isPast, onWatch, onHighlights }) => {
   );
 };
 
-const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
-  const [streamStatuses, setStreamStatuses] = useState({});
+// Available F1 Channels from your Xstream provider
+// UK Sky Sports F1 channels with English commentary
+// Multiple quality options and providers for maximum redundancy
+// All live channels route through the HLS DVR pipeline with profile=auto: the
+// server copies the source when it is already browser-playable H.264 (true
+// 1080p, almost no CPU) and transcodes to 1080p H.264 only when the provider
+// serves HEVC/10-bit. The 10-minute DVR buffer lets playback resume in place
+// after buffering or a dropped connection.
+//
+// Channels come from the server's /api/channels endpoint - the client only ever
+// sees an opaque `key` plus display metadata, never provider hosts or
+// credentials (those stay server-side in server/channels.js so they don't leak
+// into this public client bundle). The server resolves the key to credentials
+// for the HLS and health routes.
+const streamUrlForKey = (key) => `${apiBase()}/hls/${encodeURIComponent(key)}/index.m3u8?profile=auto`;
+
+const STATUS_STYLES = {
+  ONLINE: { badge: "bg-green-900 text-green-400", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
+  DEGRADED: { badge: "bg-yellow-900 text-yellow-400", card: "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600" },
+  OFFLINE: { badge: "bg-red-900 text-red-400", card: "bg-[#111] border-red-950 hover:border-red-800" },
+  UNKNOWN: { badge: "bg-gray-800 text-gray-400", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
+  CHECKING: { badge: "bg-blue-900 text-blue-300", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
+  READY: { badge: "bg-green-900 text-green-400", card: "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801]" },
+};
+
+const StreamSidebar = ({ isOpen, onClose, race, isArchive, onPlay }) => {
+  const [channels, setChannels] = useState([]);
+  const [health, setHealth] = useState({});
   const [isChecking, setIsChecking] = useState(false);
+  const checkRun = useRef(0);
 
-  // Calculate isPast before any conditional returns
-  const isPast = race && new Date(`${race.date}T${race.time}`) < new Date();
+  const isPast = !!isArchive;
 
-  // useEffect must be called BEFORE any early returns (Rules of Hooks)
+  // Load the channel list (metadata only) from the server
   useEffect(() => {
-    if (!isOpen || isPast) return;
-    // Health check triggered by button click
-  }, [isOpen, isPast]);
+    fetch(`${apiBase()}/api/channels`)
+      .then(res => (res.ok ? res.json() : []))
+      .then(data => Array.isArray(data) && setChannels(data))
+      .catch(() => setChannels([]));
+  }, []);
+
+  // Check every channel in parallel; each card updates as soon as its own
+  // result arrives instead of waiting for the slowest provider.
+  const checkAll = async (list) => {
+    const run = ++checkRun.current;
+    setIsChecking(true);
+    setHealth(Object.fromEntries(list.map(c => [c.key, { status: 'CHECKING' }])));
+    await Promise.allSettled(list.map(async (channel) => {
+      let result;
+      try {
+        const res = await fetch(`${apiBase()}/api/stream-health?key=${encodeURIComponent(channel.key)}&probe=1`, {
+          signal: AbortSignal.timeout(45000)
+        });
+        result = res.ok ? await res.json() : { status: 'UNKNOWN', reason: `Health API returned ${res.status}` };
+      } catch (err) {
+        result = { status: 'UNKNOWN', reason: err.name === 'TimeoutError' ? 'Check timed out' : 'Backend not reachable' };
+      }
+      if (checkRun.current === run) setHealth(prev => ({ ...prev, [channel.key]: result }));
+    }));
+    if (checkRun.current === run) setIsChecking(false);
+  };
+
+  // Run a check automatically whenever the live sidebar opens (and channels are loaded)
+  useEffect(() => {
+    if (!isOpen || isPast || !channels.length) return;
+    const id = setTimeout(() => checkAll(channels), 0);
+    return () => clearTimeout(id);
+  }, [isOpen, isPast, channels]);
 
   // Early return AFTER all hooks
   if (!isOpen) return null;
 
-  // Parse stream credentials from URL for health check
-  const parseStreamCredentials = (streamUrl) => {
-    try {
-      const url = new URL(streamUrl);
-      const server = url.searchParams.get('server');
-      const username = url.searchParams.get('username');
-      const password = url.searchParams.get('password');
-      const channelId = url.pathname.split('/').pop();
-      return { server, username, password, channelId };
-    } catch {
-      return null;
-    }
-  };
-
-  // Check stream health via backend API
-  const checkStreamHealth = async (stream, credentials) => {
-    try {
-      const apiBase = import.meta.env.VITE_API_URL ||
-        (window.location.hostname === 'localhost' ? 'http://localhost:3001' : window.location.origin);
-
-      const params = new URLSearchParams({
-        server: credentials.server,
-        username: credentials.username,
-        password: credentials.password,
-        channelId: credentials.channelId
-      });
-
-      const response = await fetch(`${apiBase}/api/stream-health?${params}`, {
-        signal: AbortSignal.timeout(12000)
-      });
-      const data = await response.json();
-      return data.status || 'OFFLINE';
-    } catch {
-      return 'UNKNOWN';
-    }
-  };
-
-  // Helper function to generate stream URL with custom provider
-  // Using FFmpeg restream endpoint with mpegts.js
-  const getStreamUrl = (channelId, server, username, password) => {
-    // 1. Environment Variable (Best for Split Hosting: Render Backend + GH Pages Frontend)
-    const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl) {
-      console.log(`[Stream] Using Configured API: ${envUrl}`);
-      return `${envUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    }
-
-    // 2. Localhost Development (Use standard dev port 3001)
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (isLocal) {
-      const localUrl = 'http://localhost:3001';
-      console.log(`[Stream] Using Local Dev API: ${localUrl}`);
-      return `${localUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    }
-
-    // 3. Production / Self-Hosted (Ubuntu/Render Monolith)
-    // Automatically uses the current domain and port (e.g. port 10000 or 3001)
-    const originUrl = window.location.origin;
-    console.log(`[Stream] Using Origin API: ${originUrl}`);
-    return `${originUrl}/restream/${channelId}?server=${encodeURIComponent(server)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-  };
-
-  // Available F1 Channels from your Xstream provider
-  // NOTE: Using mpegts type with mpegts.js library for playback
-  // UK Sky Sports F1 channels with English commentary - tested and verified working
-  // Multiple quality options and providers for maximum redundancy
-  const liveStreams = [
-    // Primary - Sky Sports F1 (Verified Working - Expires 2029!)
-    {
-      id: 135341,
-      title: "DE: SKY SPORT F1 720P (Primary)",
-      source: "vipwettbornwet.top",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(135341, "http://vipwettbornwet.top:8080", "VIP0199169358094917", "21693580949"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-
-    // Backup 1 - UK Sky Sports F1 FHD (Verified - Expires 2026-10-22)
-    {
-      id: 53704,
-      title: "UK: Sky Sports F1 FHD (Backup 1)",
-      source: "tv14s.xyz",
-      quality: "FHD",
-      bitrate: "Live",
-      url: getStreamUrl(53704, "http://tv14s.xyz:8080", "6dfDWF", "654188"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-
-    // Backup 2 - UK Sky Sports F1 UHD (Verified - Expires 2026-08-22)
-    {
-      id: 303265,
-      title: "UK: Sky Sports F1 UHD (Backup 2)",
-      source: "4kgood.org",
-      quality: "UHD",
-      bitrate: "Live",
-      url: getStreamUrl(303265, "http://4kgood.org:8080", "9680723188", "kyft6ks0g7gr7uw0xio6"),
-      status: "ONLINE",
-      type: "mpegts"
-    },
-
-    // Backup 3 - F1 Alternative (Verified - Expires 2026-09-05)
-    {
-      id: 775856,
-      title: "F1 Alternative (Backup 3)",
-      source: "birdkick.xyz",
-      quality: "HD",
-      bitrate: "Live",
-      url: getStreamUrl(775856, "http://birdkick.xyz:83", "buddy182", "6LkRAfUHhC"),
-      status: "ONLINE",
-      type: "mpegts"
-    }
-  ];
-
   const archiveStreams = [
-    { id: 101, title: "Full Race Replay", source: "Archive", quality: "1080p", bitrate: "Archive", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", status: "READY", type: "hls" },
-    { id: 102, title: "Race Highlights", source: "Archive", quality: "720p", bitrate: "VOD", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", status: "READY", type: "hls" },
+    { key: 'archive-full', title: "Full Race Replay", source: "Archive", quality: "1080p", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", type: "hls" },
+    { key: 'archive-highlights', title: "Race Highlights", source: "Archive", quality: "720p", url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", type: "hls" },
   ];
+
+  const liveStreams = channels.map(c => ({
+    key: c.key,
+    title: c.title,
+    source: c.english ? 'English commentary' : 'Live feed',
+    quality: c.quality,
+    url: streamUrlForKey(c.key),
+    type: 'hls-live',
+  }));
 
   const streamsToShow = isPast ? archiveStreams : liveStreams;
 
@@ -985,26 +978,15 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
                 {isPast
                   ? "Archives sourced from f1live.dpdns.org"
                   : isChecking
-                    ? "Checking stream status..."
+                    ? "Checking every feed (account, signal and resolution)..."
                     : "Live UK Sky Sports F1 stream with English commentary"}
               </p>
             </div>
             {!isPast && (
               <button
-                onClick={async () => {
-                  setIsChecking(true);
-                  const newStatuses = {};
-                  for (const stream of liveStreams) {
-                    const creds = parseStreamCredentials(stream.url);
-                    if (creds) {
-                      newStatuses[stream.id] = await checkStreamHealth(stream, creds);
-                    }
-                  }
-                  setStreamStatuses(newStatuses);
-                  setIsChecking(false);
-                }}
+                onClick={() => checkAll(channels)}
                 disabled={isChecking}
-                className="flex items-center gap-1 px-2 py-1 bg-blue-800/50 hover:bg-blue-700/50 rounded text-[10px] font-medium transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 bg-blue-800/50 hover:bg-blue-700/50 rounded text-[10px] font-medium transition-colors disabled:opacity-50 shrink-0"
               >
                 <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
                 {isChecking ? 'Checking...' : 'Check Status'}
@@ -1013,35 +995,46 @@ const StreamSidebar = ({ isOpen, onClose, race, onPlay }) => {
           </div>
 
           {streamsToShow.map(s => {
-            // Use real-time status if available, otherwise use default
-            const realStatus = streamStatuses[s.id] || s.status;
-            const isOnline = realStatus === 'ONLINE' || realStatus === 'READY';
-            const isDegraded = realStatus === 'DEGRADED';
+            const h = isPast ? { status: 'READY' } : (health[s.key] || { status: 'UNKNOWN' });
+            const style = STATUS_STYLES[h.status] || STATUS_STYLES.UNKNOWN;
+            const src = h.source;
 
             return (
               <button
-                key={s.id}
-                onClick={() => isOnline && onPlay(s)}
-                disabled={!isOnline && !isDegraded}
-                className={`w-full text-left p-4 rounded border transition-all group ${isOnline ? "bg-[#1a1a1a] border-[#333] hover:border-[#ff1801] cursor-pointer" :
-                  isDegraded ? "bg-[#1a1a1a] border-yellow-800 hover:border-yellow-600 cursor-pointer" :
-                    "bg-[#111] border-[#222] opacity-50 cursor-not-allowed"
-                  }`}
+                key={s.key}
+                onClick={() => onPlay(s)}
+                className={`w-full text-left p-4 rounded border transition-all group cursor-pointer ${style.card}`}
               >
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2">
-                    {isPast ? <Film className="w-4 h-4 text-gray-400" /> : <Tv className="w-4 h-4 text-gray-400" />}
-                    <span className={`font-bold ${isOnline || isDegraded ? "text-white" : "text-gray-500"}`}>{s.title}</span>
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isPast ? <Film className="w-4 h-4 text-gray-400 shrink-0" /> : <Tv className="w-4 h-4 text-gray-400 shrink-0" />}
+                    <span className={`font-bold truncate ${h.status === 'OFFLINE' ? "text-gray-400" : "text-white"}`}>{s.title}</span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isOnline ? "bg-green-900 text-green-400" :
-                    isDegraded ? "bg-yellow-900 text-yellow-400" :
-                      "bg-red-900 text-red-400"
-                    }`}>{realStatus}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 flex items-center gap-1 ${style.badge}`}>
+                    {h.status === 'CHECKING' && <RefreshCw className="w-2.5 h-2.5 animate-spin" />}
+                    {h.status}
+                  </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-gray-500 font-mono">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 font-mono">
                   <span className="flex items-center gap-1"><Server className="w-3 h-3" /> {s.source}</span>
                   <span className="flex items-center gap-1"><Signal className="w-3 h-3" /> {s.quality}</span>
+                  {src?.height && (
+                    <span className="flex items-center gap-1" title="Resolution the provider is sending right now">
+                      <Monitor className="w-3 h-3" /> Source {src.width}×{src.height}{src.fps ? `@${src.fps}` : ''} {src.codec?.toUpperCase()}
+                    </span>
+                  )}
+                  {h.latencyMs != null && <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> {h.latencyMs}ms</span>}
                 </div>
+                {!isPast && (h.reason || h.account) && (
+                  <div className="mt-2 text-[11px] text-gray-500 flex flex-wrap gap-x-3">
+                    {h.reason && <span className={h.status === 'ONLINE' ? 'text-gray-500' : 'text-yellow-500/80'}>{h.reason}</span>}
+                    {h.account?.expiry && <span>Expires {h.account.expiry}</span>}
+                    {h.account?.maxConnections && <span>Connections {h.account.activeConnections}/{h.account.maxConnections}</span>}
+                  </div>
+                )}
+                {!isPast && h.status === 'OFFLINE' && (
+                  <div className="mt-2 text-[11px] text-gray-400">Tap to try anyway</div>
+                )}
               </button>
             );
           })}
@@ -1074,11 +1067,21 @@ const PlayerModal = ({ stream, onClose }) => {
       </div>
       <div className="flex-1 relative flex items-center justify-center bg-black">
         <div className="w-full max-w-6xl aspect-video bg-black shadow-2xl border border-[#222]">
-          <VideoPlayer src={stream.url} type={stream.type} />
+          <VideoPlayer key={stream.url} src={stream.url} type={stream.type} />
         </div>
       </div>
     </div>
   );
+};
+
+// Re-render on an interval so session states (upcoming -> live -> done) update
+const useNow = (intervalMs) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
 };
 
 const App = () => {
@@ -1087,6 +1090,9 @@ const App = () => {
   const [activeStream, setActiveStream] = useState(null);
   const [selectedRace, setSelectedRace] = useState(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [officialSessions, setOfficialSessions] = useState([]);
+  const [feed, setFeed] = useState(null);
+  const now = useNow(5000);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1115,16 +1121,19 @@ const App = () => {
 
         if (!racesArray || !Array.isArray(racesArray)) throw new Error("Invalid API response format");
 
+        const session = (iso) => (iso ? { date: iso.split('T')[0], time: iso.split('T')[1] } : undefined);
         const mappedRaces = racesArray.map(r => ({
           round: String(r.round),
           raceName: `${r.name} Grand Prix`,
           date: r.sessions.gp.split('T')[0],
           time: r.sessions.gp.split('T')[1],
           season: "2026",
-          Qualifying: {
-            date: r.sessions.qualifying ? r.sessions.qualifying.split('T')[0] : null,
-            time: r.sessions.qualifying ? r.sessions.qualifying.split('T')[1].replace('Z', '') : null
-          },
+          FirstPractice: session(r.sessions.fp1),
+          SecondPractice: session(r.sessions.fp2),
+          ThirdPractice: session(r.sessions.fp3),
+          SprintQualifying: session(r.sessions.sprintQualifying),
+          Sprint: session(r.sessions.sprint),
+          Qualifying: session(r.sessions.qualifying),
           Circuit: {
             circuitId: r.slug,
             Location: {
@@ -1147,12 +1156,37 @@ const App = () => {
       }
     };
     fetchData();
+
+    // Official session start/end times for every session (incl. practice)
+    fetch('https://api.openf1.org/v1/sessions?year=2026')
+      .then(res => (res.ok ? res.json() : []))
+      .then(data => Array.isArray(data) && setOfficialSessions(data))
+      .catch(err => console.warn("OpenF1 sessions unavailable, using default durations", err));
   }, []);
 
-  const nextRace = useMemo(() => {
-    const now = new Date();
-    return races.find(r => new Date(`${r.date}T${r.time}`) > now) || races[races.length - 1];
-  }, [races]);
+  // Live session status from the F1 live timing feed (via our server)
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => fetch(`${apiBase()}/api/live/status`, { signal: AbortSignal.timeout(10000) })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => !cancelled && setFeed(data))
+      .catch(() => !cancelled && setFeed(null));
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const weekends = useMemo(
+    () => races.map(race => ({ race, state: weekendState(race, officialSessions, now, feed) })),
+    [races, officialSessions, now, feed]
+  );
+
+  // Hero = the first weekend that isn't fully finished. A race whose start
+  // time has passed stays here (LIVE) until the feed says it has ended.
+  const hero = useMemo(
+    () => weekends.find(w => !w.state.finished) || weekends[weekends.length - 1],
+    [weekends]
+  );
 
   const openStreamMenu = (item) => {
     setSelectedRace(item);
@@ -1171,6 +1205,8 @@ const App = () => {
     window.open(url, '_blank');
   };
 
+  const selectedWeekend = weekends.find(w => w.race === selectedRace);
+
   if (loading) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
@@ -1187,7 +1223,7 @@ const App = () => {
         <Navbar />
 
         <main className="pt-24 px-4 md:px-6 max-w-7xl mx-auto">
-          <Hero race={nextRace} onWatch={openStreamMenu} />
+          {hero && <Hero race={hero.race} weekend={hero.state} feed={feed} onWatch={openStreamMenu} />}
 
           <DriverStandings />
 
@@ -1198,11 +1234,11 @@ const App = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            {races.map((race) => (
+            {weekends.map(({ race, state }) => (
               <RaceCard
                 key={race.round}
                 race={race}
-                isPast={new Date(`${race.date}T${race.time}`) < new Date()}
+                isPast={state.finished}
                 onWatch={openStreamMenu}
                 onHighlights={playHighlights}
               />
@@ -1214,6 +1250,7 @@ const App = () => {
           isOpen={isSidebarOpen}
           onClose={() => setSidebarOpen(false)}
           race={selectedRace}
+          isArchive={selectedWeekend?.state.finished}
           onPlay={playStream}
         />
 

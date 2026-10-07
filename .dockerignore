@@ -1,0 +1,65 @@
+# Node modules & logs
+**/node_modules
+**/npm-debug.log
+*.log
+
+# Build outputs (client is rebuilt inside the image)
+client/dist
+client/.vite
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation (keep README for context)
+*.md
+!README.md
+docs/
+
+# Editor / OS files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Tests
+**/*.test.js
+**/*.spec.js
+**/test/
+**/tests/
+**/__tests__/
+
+# CI/CD & Docker metadata
+.github
+.gitlab-ci.yml
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# -----------------------------------------------------------------------------
+# Secrets & scratch data — keep IPTV account dumps, playlists and local scripts
+# out of the build context. NOTE: server/channels.json is intentionally NOT
+# excluded here — the running container needs it (or set CHANNELS_FILE / mount
+# it at runtime instead).
+# -----------------------------------------------------------------------------
+Xstream*.txt
+Xstream*.csv
+iptv*.txt
+iptv*.csv
+cleaned_iptv*.csv
+IPTV*Codes*.txt
+*.m3u
+*.m3u8
+*.py
+/package-lock.json
+
+/verify_api.js

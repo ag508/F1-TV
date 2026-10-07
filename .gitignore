@@ -20,6 +20,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log
 
 # Editor directories and files
 .vscode/
@@ -33,13 +34,8 @@ lerna-debug.log*
 
 # OS files
 Thumbs.db
-.DS_Store
-*.log
 
-# Docker
-.dockerignore
-
-# Testing
+# Testing / coverage
 coverage/
 *.test.js
 *.spec.js
@@ -49,21 +45,31 @@ coverage/
 *.temp
 .cache/
 
-# Test scripts and credentials (do not commit)
-find_redundant_links.py
-test_accounts.py
-test_all_accounts.py
-comprehensive_search.py
-Xstream_Users.txt
-Xstream-ew2.txt
-Xstream-New.txt
-extract_iptv.py
-f1_diverse_streams.m3u
-f1_english_streams.m3u
-f1_sky_sports_streams.m3u
-f1_streams_for_testing.m3u
-IPTV Xtream Codes.txt
-iptv_list.csv
-verify_api.js
-find_f1_streams.py
-Xstream_Users.txt
+# -----------------------------------------------------------------------------
+# Secrets & scratch data — NEVER commit (IPTV accounts, provider credentials,
+# channel lists, and the local scraping/validation scripts). Only application
+# code and the README belong in this repo.
+# -----------------------------------------------------------------------------
+
+# Live channel registry with real provider credentials (use channels.example.json)
+server/channels.json
+server/channels.local.json
+
+# IPTV account / credential dumps and playlists
+Xstream*.txt
+Xstream*.csv
+iptv*.txt
+iptv*.csv
+cleaned_iptv*.csv
+IPTV*Codes*.txt
+*.m3u
+*.m3u8
+
+# Local scraping / validation scripts (not part of the app)
+*.py
+
+# Stray root lockfile (real lockfiles live in client/ and server/)
+/package-lock.json
+
+# Stray one-off scripts at repo root
+/verify_api.js

@@ -57,17 +57,20 @@ cd ../server
 npm install
 ```
 
-### 3. Configure Xstream Credentials
+### 3. Configure Channels (credentials stay server-side)
 
-Edit [client/src/App.jsx](client/src/App.jsx) and update the `XSTREAM_CONFIG` object:
+Provider credentials live **only on the server** in [server/channels.js](server/channels.js)
+and are never sent to the browser (the client references each channel by an
+opaque `key`). This keeps credentials out of the public client bundle. Edit the
+`DEFAULT_CHANNELS` array, or override at runtime without touching code:
 
-```javascript
-const XSTREAM_CONFIG = {
-  server: "http://your-server.com:8080",
-  username: "your_username",
-  password: "your_password"
-};
+```bash
+CHANNELS_FILE=/path/to/channels.json npm start   # same shape as DEFAULT_CHANNELS
 ```
+
+Each entry: `{ key, title, quality, english, server, username, password, channelId }`.
+Use one account per entry (each with a free connection slot) so the parallel
+"Check Status" never hits a provider's per-account connection limit.
 
 ### 4. Run Development Servers
 
@@ -310,13 +313,41 @@ F1-TV/
 ## API Endpoints
 
 - `GET /` - Serve React frontend
-- `GET /restream/:channelId` - FFmpeg restream endpoint for IPTV channels
+- `GET /api/channels` - Live channel list (metadata only: key, title, quality; **no credentials**)
+- `GET /restream/:channelId` - FFmpeg restream endpoint for IPTV channels (MPEG-TS)
+- `GET /hls/:channel/index.m3u8` - HLS restream with a DVR buffer (auto-restarting FFmpeg). `:channel` is a registry key (credentials resolved server-side) or a raw channelId with `?server=&username=&password=`. `profile=auto` (default) copies the source when it is already browser-playable H.264 ≤1080p and transcodes to 1080p H.264 only when it is HEVC/UHD; `profile=1080p` always transcodes; `profile=source` always copies
+- `GET /api/stream-health?key=` - Account + channel check by registry key (`probe=1` also reports the source codec/resolution); raw `server/username/password/channelId` also accepted
+- `GET /api/live/status` - Current F1 session and its live status (from F1 live timing)
+- `GET /api/live/stream` - Server-Sent Events: live timing snapshot (1/s) and car positions (4/s)
+- `GET /api/live/circuit?key=&year=` - Circuit outline (MultiViewer, OpenF1 fallback)
 - `GET /health` - Health check endpoint
+
+## Live Session Detection & Telemetry
+
+The hero shows the current weekend until its race is over. Every session (FP1-3, Sprint
+Qualifying, Sprint, Qualifying, Race) comes from Jolpica, scheduled end times from OpenF1,
+and the live state from the official F1 live timing feed. A session stays **LIVE** until F1
+marks it `Finalised`, so delays, red flags and overruns don't flip the hero to the next race.
+
+While a session is live the hero shows live telemetry: track map with cars, leaderboard with
+tyres and gaps, track status, race control, weather and the selected driver's timing.
+Since mid-2025 F1 only sends car GPS and car telemetry (speed/gear/throttle/brake/DRS) to
+F1 TV subscribers. Set `F1TV_TOKEN` for these. Without it, car positions are interpolated
+from the live mini-sector timing.
 
 ## Environment Variables
 
 - `NODE_ENV` - Environment mode (production/development)
-- `PORT` - Server port (default: 3000)
+- `PORT` - Server port (default: 3001)
+- `F1TV_TOKEN` - Optional F1 TV subscription token, enables GPS positions + car telemetry
+- `LIVE_TIMING_DISABLED=1` - Don't connect to F1 live timing
+- `LIVE_REPLAY` - Replay an archived session through the live pipeline for testing, e.g. `2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/` (see `https://livetiming.formula1.com/static/2026/Index.json`)
+- `LIVE_REPLAY_START` - Offset into the replay (`HH:MM:SS`, default: just before the start)
+- `LIVE_REPLAY_SPEED` - Replay speed multiplier (default 1)
+- `LIVE_REPLAY_GPS=0` - Replay without GPS/car data (preview what anonymous viewers get)
+- `X264_PRESET` - x264 preset for the 1080p restream (default `veryfast`; use `superfast` on weak CPUs)
+- `HLS_1080P_BITRATE` / `HLS_1080P_MAXRATE` - 1080p video bitrate (default `6000k` / `7500k`)
+- `HLS_DVR_SECONDS` - How much of the stream is kept for resuming after buffering (default 600)
 
 ## Troubleshooting
 

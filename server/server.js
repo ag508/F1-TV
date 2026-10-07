@@ -12,7 +12,22 @@ const cors = require('cors');
 const axios = require('axios');
 const path = require('path');
 const { spawn } = require('child_process');
+const hls = require('./hls');
+const channels = require('./channels');
+const { LiveTiming } = require('./livetiming');
 const app = express();
+
+// F1 live timing feed (session status, timing, telemetry)
+// Runs on free/anonymous F1 API data by default. F1TV_TOKEN is optional and
+// only unlocks car GPS + telemetry; leave it unset to run on free data only.
+const liveTiming = new LiveTiming({
+  token: process.env.F1TV_TOKEN || null,
+  replayPath: process.env.LIVE_REPLAY,
+  replaySpeed: process.env.LIVE_REPLAY_SPEED,
+  replayStart: process.env.LIVE_REPLAY_START,
+  disabled: process.env.LIVE_TIMING_DISABLED === '1'
+});
+liveTiming.start();
 
 // Session storage for cookies (to maintain Xstream authentication)
 const cookieJar = new Map();
@@ -44,72 +59,138 @@ const cache = {
 app.get('/health', (req, res) => res.status(200).json({ status: 'OK', system: 'F1-Hub' }));
 
 // 2. Stream Health Check - Test if Xtream streams are accessible
+const IPTV_UA = 'VLC/3.0.18 LibVLC/3.0.18';
+
+// Read the first ~64KB of a live MPEG-TS stream and verify it really is TS
+// (0x47 sync byte every 188 bytes). Live streams never end, so the request is
+// aborted once enough data arrived instead of waiting for completion.
+function sampleTransportStream(url, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    const started = Date.now();
+    let firstByteMs = null;
+    let chunks = [];
+    let size = 0;
+    const finish = (result) => {
+      clearTimeout(timer);
+      controller.abort();
+      resolve({ ...result, firstByteMs, elapsedMs: Date.now() - started });
+    };
+    const timer = setTimeout(() => finish({ ok: size > 0 && isTransportStream(Buffer.concat(chunks)), bytes: size, timedOut: true }), timeoutMs);
+
+    axios.get(url, { responseType: 'stream', signal: controller.signal, headers: { 'User-Agent': IPTV_UA }, timeout: timeoutMs, maxRedirects: 5 })
+      .then((response) => {
+        const type = response.headers['content-type'] || '';
+        if (type.includes('text/html')) return finish({ ok: false, reason: 'Provider returned an error page' });
+        response.data.on('data', (chunk) => {
+          if (firstByteMs === null) firstByteMs = Date.now() - started;
+          chunks.push(chunk);
+          size += chunk.length;
+          if (size >= 64 * 1024) finish({ ok: isTransportStream(Buffer.concat(chunks)), bytes: size });
+        });
+        response.data.on('end', () => finish({ ok: isTransportStream(Buffer.concat(chunks)), bytes: size }));
+        response.data.on('error', () => {});
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) finish({ ok: false, reason: err.response ? `HTTP ${err.response.status}` : err.code || err.message });
+      });
+  });
+}
+
+function isTransportStream(buf) {
+  for (let offset = 0; offset < 188 && offset + 188 * 3 < buf.length; offset++) {
+    if (buf[offset] === 0x47 && buf[offset + 188] === 0x47 && buf[offset + 376] === 0x47) return true;
+  }
+  return false;
+}
+
+// ffprobe the source to report its real codec/resolution
+function probeStream(url, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const proc = spawn('ffprobe', [
+      '-v', 'error', '-user_agent', IPTV_UA, '-rw_timeout', '10000000',
+      '-analyzeduration', '3000000', '-probesize', '3000000',
+      '-show_entries', 'stream=codec_type,codec_name,profile,width,height,r_frame_rate',
+      '-of', 'json', url
+    ]);
+    let out = '';
+    const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
+    proc.stdout.on('data', d => (out += d));
+    proc.on('error', () => { clearTimeout(timer); resolve(null); });
+    proc.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const streams = JSON.parse(out).streams || [];
+        const v = streams.find(s => s.codec_type === 'video');
+        if (!v) return resolve(null);
+        const [num, den] = String(v.r_frame_rate || '0/1').split('/').map(Number);
+        resolve({ codec: v.codec_name, profile: v.profile, width: v.width, height: v.height, fps: den ? Math.round(num / den) : null });
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
 app.get('/api/stream-health', async (req, res) => {
-  const { server, username, password, channelId } = req.query;
+  const { probe } = req.query;
+  // Credentials come from the server-side registry by channel key; raw
+  // server/username/password in the query are still accepted for ad-hoc checks.
+  const known = req.query.key ? channels.resolve(req.query.key) : null;
+  const server = known ? known.server : req.query.server;
+  const username = known ? known.username : req.query.username;
+  const password = known ? known.password : req.query.password;
+  const channelId = known ? known.channelId : req.query.channelId;
 
   if (!server || !username || !password) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+    return res.status(400).json({ error: 'Unknown channel key, and no server/username/password supplied' });
   }
 
+  const checkedAt = new Date().toISOString();
+  let userInfo;
   try {
-    // Test the account status via player API
-    const apiUrl = `${server}/player_api.php?username=${username}&password=${password}`;
-    const response = await axios.get(apiUrl, {
+    const response = await axios.get(`${server}/player_api.php`, {
+      params: { username, password },
       timeout: 8000,
-      headers: { 'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18' }
+      headers: { 'User-Agent': IPTV_UA }
     });
-
-    const userInfo = response.data?.user_info || {};
-    const isActive = userInfo.status === 'Active';
-
-    if (!isActive) {
-      return res.json({
-        status: 'OFFLINE',
-        reason: 'Account inactive or expired',
-        details: { status: userInfo.status }
-      });
-    }
-
-    // If channelId provided, test the actual stream
-    if (channelId) {
-      const streamUrl = `${server}/live/${username}/${password}/${channelId}.ts`;
-      try {
-        const streamTest = await axios.get(streamUrl, {
-          timeout: 10000,
-          headers: { 'User-Agent': 'VLC/3.0.18 LibVLC/3.0.18' },
-          responseType: 'arraybuffer',
-          maxContentLength: 8192  // Just get first 8KB to verify stream
-        });
-
-        if (streamTest.data && streamTest.data.length > 100) {
-          return res.json({
-            status: 'ONLINE',
-            accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown',
-            streamBytes: streamTest.data.length
-          });
-        }
-      } catch (streamError) {
-        return res.json({
-          status: 'DEGRADED',
-          reason: 'Account active but stream unavailable',
-          accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown'
-        });
-      }
-    }
-
-    // Account active but stream not tested
-    return res.json({
-      status: 'ONLINE',
-      accountExpiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : 'Unknown'
-    });
-
+    userInfo = response.data?.user_info;
   } catch (error) {
-    return res.json({
-      status: 'OFFLINE',
-      reason: 'Server unreachable',
-      error: error.message
-    });
+    return res.json({ status: 'OFFLINE', reason: 'Provider unreachable', error: error.message, checkedAt });
   }
+
+  if (!userInfo || userInfo.auth === 0 || userInfo.status !== 'Active') {
+    return res.json({ status: 'OFFLINE', reason: `Account ${userInfo?.status || 'rejected'}`, checkedAt });
+  }
+
+  const account = {
+    expiry: userInfo.exp_date ? new Date(userInfo.exp_date * 1000).toISOString().split('T')[0] : null,
+    activeConnections: Number(userInfo.active_cons) || 0,
+    maxConnections: Number(userInfo.max_connections) || null
+  };
+
+  if (!channelId) return res.json({ status: 'ONLINE', account, checkedAt });
+
+  // Already being restreamed by this server: it is up, and opening another
+  // upstream connection could kick the running one on single-connection accounts.
+  const restreamKeys = [...activeStreams.keys()];
+  if (restreamKeys.some(k => k === `${username}-${channelId}` || k === `${username}-${channelId}-sd`) || hls.isChannelActive(server, username, channelId)) {
+    return res.json({ status: 'ONLINE', reason: 'Currently streaming', account, checkedAt });
+  }
+
+  if (account.maxConnections && account.activeConnections >= account.maxConnections) {
+    return res.json({ status: 'DEGRADED', reason: `All ${account.maxConnections} connection(s) in use`, account, checkedAt });
+  }
+
+  const streamUrl = `${server}/live/${username}/${password}/${channelId}.ts`;
+  const sample = await sampleTransportStream(streamUrl);
+  if (!sample.ok) {
+    return res.json({ status: 'DEGRADED', reason: sample.reason || 'Account active but channel not sending video', account, sample, checkedAt });
+  }
+
+  const source = probe === '1' ? await probeStream(streamUrl) : null;
+  const kbps = sample.elapsedMs ? Math.round((sample.bytes * 8) / sample.elapsedMs) : null;
+  res.json({ status: 'ONLINE', account, latencyMs: sample.firstByteMs, kbps, source, checkedAt });
 });
 
 
@@ -144,7 +225,89 @@ app.get('/api/streams', async (req, res) => {
 });
 
 // 3. FFmpeg Restream Endpoint (for MPEG-TS with mpegts.js)
-// Fetches the source stream with FFmpeg and restreams it as MPEG-TS
+// Fetches the source stream with FFmpeg and restreams it as MPEG-TS.
+// One FFmpeg process per channel is shared by all viewers. Output is fanned out
+// manually so one slow viewer can't stall the stream for everybody, and when
+// FFmpeg exits every viewer's response is ended so the player reconnects
+// instead of hanging on a dead connection.
+const MAX_CLIENT_BACKLOG = 16 * 1024 * 1024; // drop viewers more than ~16MB behind
+
+function buildRestreamArgs(sourceUrl, isSD) {
+  const input = [
+    '-y',
+    '-fflags', '+genpts+discardcorrupt',
+    '-analyzeduration', '10000000', // Analyze more data to detect format
+    '-probesize', '10000000',
+    '-re',                 // Read input at native frame rate
+    '-reconnect', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_on_network_error', '1',
+    '-reconnect_delay_max', '5',
+    '-rw_timeout', '15000000',
+    '-user_agent', IPTV_UA,
+    '-i', sourceUrl
+  ];
+  const codecs = isSD
+    ? [
+      // SD: Transcode video to lower resolution and bitrate
+      '-c:v', 'libx264', '-preset', 'veryfast',
+      '-s', '854x480', '-b:v', '800k', '-maxrate', '1M', '-bufsize', '2M',
+      '-c:a', 'aac', '-ac', '2', '-b:a', '128k'
+    ]
+    : [
+      // HD/UHD: Copy video, only transcode audio (browser-compatible stereo AAC)
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-ac', '2', '-b:a', '192k'
+    ];
+  return [...input, ...codecs, '-f', 'mpegts', 'pipe:1'];
+}
+
+function startRestream(streamKey, channelId, sourceUrl, isSD) {
+  console.log(`[Restream] Starting new FFmpeg process for ${streamKey}`);
+  const ffmpeg = spawn('ffmpeg', buildRestreamArgs(sourceUrl, isSD));
+  const streamData = { ffmpeg, clients: new Set(), startTime: Date.now(), idleTimer: null };
+  activeStreams.set(streamKey, streamData);
+
+  ffmpeg.stdout.on('data', (chunk) => {
+    for (const res of streamData.clients) {
+      if (res.writableLength > MAX_CLIENT_BACKLOG) {
+        console.warn(`[Restream] Viewer too far behind on ${streamKey}, disconnecting it so it can resync`);
+        res.end();
+        streamData.clients.delete(res);
+        continue;
+      }
+      res.write(chunk);
+    }
+  });
+
+  // Only log important FFmpeg messages
+  ffmpeg.stderr.on('data', (data) => {
+    const output = data.toString().trim();
+    if (output.includes('Input #') || output.includes('Output #') ||
+      output.includes('Stream #') || output.includes('error') ||
+      output.includes('Error')) {
+      console.log(`[FFmpeg ${channelId}]`, output);
+    }
+  });
+
+  const shutdown = () => {
+    if (activeStreams.get(streamKey) === streamData) activeStreams.delete(streamKey);
+    clearTimeout(streamData.idleTimer);
+    for (const res of streamData.clients) res.end();
+    streamData.clients.clear();
+  };
+  ffmpeg.on('error', (err) => {
+    console.error(`[FFmpeg Error ${channelId}]:`, err);
+    shutdown();
+  });
+  ffmpeg.on('close', (code) => {
+    console.log(`[FFmpeg ${channelId}] Process closed with code ${code}`);
+    shutdown();
+  });
+
+  return streamData;
+}
+
 app.get('/restream/:channelId', (req, res) => {
   const { channelId } = req.params;
   const { server, username, password } = req.query;
@@ -162,151 +325,137 @@ app.get('/restream/:channelId', (req, res) => {
   const streamKey = `${username}-${channelId}`;
 
   console.log(`[Restream] Request for channel ${channelId}${isSD ? ' (SD transcode)' : ''}`);
-  console.log(`[Restream] Source URL: ${sourceUrl}`);
 
-  // Check if stream is already running
-  if (activeStreams.has(streamKey)) {
-    console.log(`[Restream] Using existing stream for ${streamKey}`);
-    const streamData = activeStreams.get(streamKey);
-    streamData.clientCount++;
+  const streamData = activeStreams.get(streamKey) || startRestream(streamKey, channelId, sourceUrl, isSD);
+  clearTimeout(streamData.idleTimer);
 
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'video/mp2t');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+  // Set headers for streaming
+  res.setHeader('Content-Type', 'video/mp2t');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
 
-    console.log(`[Restream] Client connected to ${streamKey} (${streamData.clientCount} total clients)`);
+  streamData.clients.add(res);
+  console.log(`[Restream] Client connected to ${streamKey} (${streamData.clients.size} total clients)`);
 
-    // Pipe FFmpeg output to this new client
-    streamData.ffmpeg.stdout.pipe(res, { end: false });
+  // Clean up on client disconnect
+  req.on('close', () => {
+    streamData.clients.delete(res);
+    console.log(`[Restream] Client disconnected from ${streamKey} (${streamData.clients.size} clients remaining)`);
 
-    // Clean up on client disconnect
-    req.on('close', () => {
-      streamData.clientCount--;
-      console.log(`[Restream] Client disconnected from ${streamKey} (${streamData.clientCount} clients remaining)`);
-
-      // Kill FFmpeg after 30 seconds if no clients
-      if (streamData.clientCount === 0) {
-        setTimeout(() => {
-          if (activeStreams.has(streamKey) && activeStreams.get(streamKey).clientCount === 0) {
-            console.log(`[Restream] Killing idle stream: ${streamKey}`);
-            activeStreams.get(streamKey).ffmpeg.kill('SIGTERM');
-            activeStreams.delete(streamKey);
-          }
-        }, 30000);
-      }
-    });
-  } else {
-    console.log(`[Restream] Starting new FFmpeg process for ${streamKey}`);
-
-    // Build FFmpeg arguments based on quality
-    let ffmpegArgs;
-    if (isSD) {
-      // SD: Transcode video to lower resolution and bitrate
-      ffmpegArgs = [
-        '-y',
-        '-analyzeduration', '10000000', // Analyze more data to detect format
-        '-probesize', '10000000',
-        '-re',                 // Read input at native frame rate
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5',
-        '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
-        '-i', sourceUrl,
-        '-c:v', 'libx264',     // Transcode video to H.264
-        '-preset', 'veryfast', // Fast encoding
-        '-s', '854x480',       // SD resolution (480p)
-        '-b:v', '800k',        // Low video bitrate for SD
-        '-maxrate', '1M',
-        '-bufsize', '2M',
-        '-c:a', 'aac',         // Transcode audio to AAC
-        '-ac', '2',            // Stereo audio
-        '-b:a', '128k',        // Lower audio bitrate for SD
-        '-f', 'mpegts',        // Output as MPEG-TS
-        'pipe:1'               // Output to stdout
-      ];
-    } else {
-      // HD/UHD: Copy video, only transcode audio
-      ffmpegArgs = [
-        '-y',
-        '-analyzeduration', '10000000',
-        '-probesize', '10000000',
-        '-re',                 // Read input at native frame rate
-        '-reconnect', '1',
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5',
-        '-user_agent', 'VLC/3.0.18 LibVLC/3.0.18',
-        '-i', sourceUrl,
-        '-c:v', 'copy',        // Copy video codec (no transcoding)
-        '-c:a', 'aac',         // Transcode audio to AAC (browser-compatible)
-        '-ac', '2',            // Downmix to stereo (more compatible)
-        '-b:a', '192k',        // Audio bitrate
-        '-f', 'mpegts',        // Output as MPEG-TS
-        'pipe:1'               // Output to stdout
-      ];
+    // Kill FFmpeg after 30 seconds if no clients (keeps it warm for quick reconnects)
+    if (streamData.clients.size === 0) {
+      streamData.idleTimer = setTimeout(() => {
+        if (activeStreams.get(streamKey) === streamData && streamData.clients.size === 0) {
+          console.log(`[Restream] Killing idle stream: ${streamKey}`);
+          streamData.ffmpeg.kill('SIGTERM');
+        }
+      }, 30000);
     }
-
-    // Start FFmpeg process
-    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
-
-    const streamData = {
-      ffmpeg: ffmpeg,
-      clientCount: 1,
-      startTime: Date.now()
-    };
-
-    activeStreams.set(streamKey, streamData);
-
-    // Only log important FFmpeg messages
-    ffmpeg.stderr.on('data', (data) => {
-      const output = data.toString().trim();
-      if (output.includes('Input #') || output.includes('Output #') ||
-        output.includes('Stream #') || output.includes('error') ||
-        output.includes('Error')) {
-        console.log(`[FFmpeg ${channelId}]`, output);
-      }
-    });
-
-    ffmpeg.on('error', (err) => {
-      console.error(`[FFmpeg Error ${channelId}]:`, err);
-      activeStreams.delete(streamKey);
-    });
-
-    ffmpeg.on('close', (code) => {
-      console.log(`[FFmpeg ${channelId}] Process closed with code ${code}`);
-      activeStreams.delete(streamKey);
-    });
-
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'video/mp2t');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    console.log(`[Restream] Client connected to ${streamKey} (1 client)`);
-
-    // Pipe FFmpeg output to response
-    ffmpeg.stdout.pipe(res, { end: false });
-
-    // Clean up on client disconnect
-    req.on('close', () => {
-      streamData.clientCount--;
-      console.log(`[Restream] Client disconnected from ${streamKey} (${streamData.clientCount} clients remaining)`);
-
-      // Kill FFmpeg after 30 seconds if no clients
-      if (streamData.clientCount === 0) {
-        setTimeout(() => {
-          if (activeStreams.has(streamKey) && activeStreams.get(streamKey).clientCount === 0) {
-            console.log(`[Restream] Killing idle stream: ${streamKey}`);
-            activeStreams.get(streamKey).ffmpeg.kill('SIGTERM');
-            activeStreams.delete(streamKey);
-          }
-        }, 30000);
-      }
-    });
-  }
+  });
 });
+
+// 3b. HLS restream with DVR buffer (resilient, 1080p H.264)
+hls.registerRoutes(app, channels.resolve);
+
+// Live channel list (metadata only - credentials stay server-side)
+app.get('/api/channels', (req, res) => res.json(channels.publicList()));
+
+// 3c. Live timing (session status + telemetry for the hero section)
+app.get('/api/live/status', (req, res) => res.json(liveTiming.status()));
+
+app.get('/api/live/state', (req, res) => res.json({ ...liveTiming.snapshot(), positions: liveTiming.positionSnapshot() }));
+
+// Server-Sent Events: full timing snapshot every second, car positions 4x/sec
+app.get('/api/live/stream', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no'
+  });
+  res.flushHeaders();
+  res.write('retry: 3000\n\n');
+
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  send('state', liveTiming.snapshot());
+
+  let lastPositionAt = null;
+  const stateTimer = setInterval(() => send('state', liveTiming.snapshot()), 1000);
+  const positionTimer = setInterval(() => {
+    const positions = liveTiming.positionSnapshot();
+    if (positions.at && positions.at !== lastPositionAt) {
+      lastPositionAt = positions.at;
+      send('positions', positions);
+    }
+  }, 250);
+
+  req.on('close', () => {
+    clearInterval(stateTimer);
+    clearInterval(positionTimer);
+  });
+});
+
+// Circuit outline in F1 live timing coordinates (same system as Position.z).
+// MultiViewer publishes outlines + mini-sector indexes per circuit/season; for
+// brand-new circuits fall back to tracing a lap from OpenF1 location data.
+const circuitCache = new Map();
+
+async function circuitFromOpenF1(circuitKey) {
+  const { data: sessions } = await axios.get('https://api.openf1.org/v1/sessions', { params: { circuit_key: circuitKey }, timeout: 15000 });
+  const finished = sessions.filter(s => Date.parse(s.date_end) < Date.now()).sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
+  for (const session of finished.slice(0, 3)) {
+    const { data: laps } = await axios.get('https://api.openf1.org/v1/laps', { params: { session_key: session.session_key, lap_number: 3 }, timeout: 15000 });
+    const lap = laps.find(l => l.lap_duration && !l.is_pit_out_lap && l.date_start);
+    if (!lap) continue;
+    const start = new Date(lap.date_start);
+    const end = new Date(start.getTime() + lap.lap_duration * 1000);
+    const { data: points } = await axios.get(
+      `https://api.openf1.org/v1/location?session_key=${session.session_key}&driver_number=${lap.driver_number}&date>=${start.toISOString()}&date<${end.toISOString()}`,
+      { timeout: 20000 }
+    );
+    if (points.length > 50) {
+      return { source: 'openf1', circuitKey: Number(circuitKey), rotation: 0, x: points.map(p => p.x), y: points.map(p => p.y), corners: [], miniSectorsIndexes: null };
+    }
+  }
+  return null;
+}
+
+app.get('/api/live/circuit', async (req, res) => {
+  const circuitKey = Number(req.query.key);
+  const year = Number(req.query.year) || new Date().getFullYear();
+  if (!circuitKey) return res.status(400).json({ error: 'Missing circuit key' });
+
+  const cacheKey = `${circuitKey}-${year}`;
+  if (circuitCache.has(cacheKey)) return res.json(circuitCache.get(cacheKey));
+
+  let circuit = null;
+  for (let y = year; y >= year - 4 && !circuit; y--) {
+    try {
+      const { data } = await axios.get(`https://api.multiviewer.app/api/v1/circuits/${circuitKey}/${y}`, {
+        timeout: 10000, headers: { 'User-Agent': 'F1-TV/1.0' }
+      });
+      if (Array.isArray(data?.x) && data.x.length) {
+        circuit = {
+          source: 'multiviewer', circuitKey, year: y, name: data.circuitName, rotation: data.rotation || 0,
+          x: data.x, y: data.y,
+          corners: (data.corners || []).map(c => ({ number: c.number, x: c.trackPosition.x, y: c.trackPosition.y })),
+          miniSectorsIndexes: data.miniSectorsIndexes || null
+        };
+      }
+    } catch { /* not published for this season, try the previous one */ }
+  }
+  if (!circuit) {
+    try { circuit = await circuitFromOpenF1(circuitKey); } catch (err) { console.warn('[Circuit] OpenF1 fallback failed:', err.message); }
+  }
+  if (!circuit) return res.status(404).json({ error: 'Circuit layout not available' });
+
+  circuitCache.set(cacheKey, circuit);
+  res.json(circuit);
+});
+
 
 // 4. Proxy Video (CORS Bypass & HLS Rewriter)
 // Enhanced proxy with better CORS handling and HLS support
