@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, MapPin, Play, Pause, Trophy, Tv, AlertCircle, X, RefreshCw, Server, Signal, Info, Film, Timer, BarChart3, Youtube, Users, CheckCircle2, Radio, Zap, Monitor, Volume2, VolumeX, Maximize, Minimize, PictureInPicture2, ChevronDown, PanelRightOpen, PanelRightClose, Activity } from 'lucide-react';
+import { Calendar, MapPin, Play, Pause, Trophy, Tv, AlertCircle, X, RefreshCw, Server, Signal, Info, Film, Timer, BarChart3, Youtube, Users, CheckCircle2, Radio, Zap, Monitor, Volume2, VolumeX, Maximize, Minimize, PictureInPicture2, ChevronDown, PanelRightOpen, PanelRightClose, Activity, Settings } from 'lucide-react';
 import mpegts from 'mpegts.js';
 import Hls from 'hls.js';
 import LiveTelemetry from './components/LiveTelemetry';
@@ -403,6 +403,14 @@ const HlsPlayer = ({ src, live }) => {
   const [timeline, setTimeline] = useState({ start: 0, end: 0, current: 0, buffered: 0 });
   const [stats, setStats] = useState(null);
   const [hover, setHover] = useState(null); // seek bar hover { pct, time }
+  const [levels, setLevels] = useState([]);          // ABR renditions from the master playlist
+  const [currentLevel, setCurrentLevel] = useState(-1);
+  const [manualLevel, setManualLevel] = useState(-1); // -1 = Auto
+  const [qualityOpen, setQualityOpen] = useState(false);
+  const [catchingUp, setCatchingUp] = useState(false);
+  // Set when the viewer deliberately rewinds into the DVR window; suppresses
+  // the automatic catch-up so we don't fight them.
+  const userRewoundRef = useRef(false);
 
   // --- Playback engine (hls.js with resume-in-place recovery) ---
   useEffect(() => {
@@ -454,6 +462,16 @@ const HlsPlayer = ({ src, live }) => {
         maxBufferLength: 30,
         maxMaxBufferLength: 90,
         backBufferLength: 600,
+        // Adaptive bitrate: pick the rendition from measured bandwidth with
+        // headroom, so a viewer whose connection drops below the top bitrate
+        // switches to a lighter 1080p rendition instead of stalling.
+        startLevel: -1,
+        abrEwmaDefaultEstimate: 4_000_000,
+        abrBandWidthFactor: 0.8,     // use 80% of measured bandwidth when switching down/staying
+        abrBandWidthUpFactor: 0.6,   // be cautious stepping up
+        abrMaxWithRealBitrate: true,
+        capLevelToPlayerSize: false, // keep 1080p even in the 70% split view
+        testBandwidth: true,
         manifestLoadPolicy: HLS_LOAD_POLICY(30000, 30000, 12),
         playlistLoadPolicy: HLS_LOAD_POLICY(15000, 20000, 12),
         fragLoadPolicy: HLS_LOAD_POLICY(15000, 60000, 8),
@@ -466,7 +484,11 @@ const HlsPlayer = ({ src, live }) => {
           hls.startLoad(frag ? frag.start + resume.offset : -1);
         });
       }
-      hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => { }));
+      hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+        setLevels(data.levels.map((l, i) => ({ index: i, height: l.height, bitrate: l.bitrate, fps: l.frameRate })));
+        video.play().catch(() => { });
+      });
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_e, { level }) => setCurrentLevel(level));
       hls.on(Hls.Events.BUFFER_CODECS, (_e, data) => {
         mediaInfoRef.current.codecs = [data.video?.codec, data.audio?.codec].filter(Boolean).join(' / ');
       });
@@ -545,6 +567,22 @@ const HlsPlayer = ({ src, live }) => {
         if (v.buffered.start(i) <= v.currentTime + 0.5 && v.buffered.end(i) >= v.currentTime) bufferedEnd = v.buffered.end(i);
       }
       setTimeline({ start, end, current: v.currentTime, buffered: bufferedEnd });
+
+      // Live catch-up (end = hls.js live sync position, ~8s behind the edge)
+      if (live && hls && !v.paused) {
+        const behind = Math.max(0, end - v.currentTime);
+        const ahead = bufferedEnd - v.currentTime;
+        if (userRewoundRef.current && behind < 3) userRewoundRef.current = false;
+        if (!userRewoundRef.current && behind > 60) {
+          v.currentTime = end; // long outage: rejoin live
+          v.playbackRate = 1;
+        } else if (!userRewoundRef.current && behind > 6 && ahead > 4) {
+          if (v.playbackRate !== 1.08) v.playbackRate = 1.08;
+        } else if (v.playbackRate !== 1 && (behind < 1.5 || ahead < 2 || userRewoundRef.current)) {
+          v.playbackRate = 1;
+        }
+        setCatchingUp(v.playbackRate > 1);
+      }
       const quality = v.getVideoPlaybackQuality?.();
       const level = hls?.levels?.[hls.currentLevel >= 0 ? hls.currentLevel : 0];
       setStats({
@@ -592,12 +630,22 @@ const HlsPlayer = ({ src, live }) => {
   };
   const goLive = () => {
     const hls = hlsRef.current;
+    userRewoundRef.current = false;
     if (hls?.liveSyncPosition) videoRef.current.currentTime = hls.liveSyncPosition;
     videoRef.current.play().catch(() => { });
   };
   const seekToPct = (pct) => {
     const { start, end } = timeline;
-    if (end > start) videoRef.current.currentTime = start + pct * (end - start);
+    if (end <= start) return;
+    const target = start + pct * (end - start);
+    userRewoundRef.current = end - target > 6; // deliberate rewind: don't auto catch up
+    videoRef.current.currentTime = target;
+  };
+  // -1 = Auto (adaptive). A fixed rendition switches at the next segment.
+  const selectLevel = (index) => {
+    if (hlsRef.current) hlsRef.current.nextLevel = index;
+    setManualLevel(index);
+    setQualityOpen(false);
   };
   const showControls = () => {
     setControlsVisible(true);
@@ -615,8 +663,8 @@ const HlsPlayer = ({ src, live }) => {
         case ' ': case 'k': e.preventDefault(); if (v.paused) v.play().catch(() => { }); else v.pause(); break;
         case 'm': v.muted = !v.muted; break;
         case 'f': if (document.fullscreenElement) document.exitFullscreen().catch(() => { }); else containerRef.current?.requestFullscreen?.().catch(() => { }); break;
-        case 'l': if (hlsRef.current?.liveSyncPosition) v.currentTime = hlsRef.current.liveSyncPosition; break;
-        case 'arrowleft': v.currentTime = Math.max(0, v.currentTime - 10); break;
+        case 'l': userRewoundRef.current = false; if (hlsRef.current?.liveSyncPosition) v.currentTime = hlsRef.current.liveSyncPosition; break;
+        case 'arrowleft': userRewoundRef.current = true; v.currentTime = Math.max(0, v.currentTime - 10); break;
         case 'arrowright': v.currentTime = v.currentTime + 10; break;
         default: return;
       }
@@ -632,7 +680,10 @@ const HlsPlayer = ({ src, live }) => {
   const playedPct = Math.min(100, Math.max(0, ((current - start) / span) * 100));
   const bufferedPct = Math.min(100, Math.max(0, ((buffered - start) / span) * 100));
   const behindLive = Math.max(0, end - current);
-  const atLive = !live || behindLive < 15;
+  const atLive = !live || behindLive < 8;
+  const activeLevel = levels[currentLevel];
+  const mbps = (bps) => `${(bps / 1e6).toFixed(1)} Mbps`;
+  const levelLabel = (l) => `${l.height}p${l.fps && l.fps < 40 ? Math.round(l.fps) : ''} · ${mbps(l.bitrate)}`;
   const hideUi = !controlsVisible && playing;
   const resolution = stats?.height ? `${stats.height}p` : null;
   const ready = status.phase !== 'loading' && status.phase !== 'error';
@@ -656,9 +707,14 @@ const HlsPlayer = ({ src, live }) => {
             </button>
           ) : <span />}
           <div className="flex items-center gap-2">
+            {catchingUp && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-black/70 border border-white/20 text-gray-200" title="Playing slightly faster to rejoin the live edge">
+                CATCHING UP 1.08×
+              </span>
+            )}
             {resolution && (
               <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-wider ${stats.height >= 2160 ? 'bg-purple-600 text-white' : stats.height >= 1080 ? 'bg-white text-black' : 'bg-white/20 text-white'}`}>
-                {stats.height >= 2160 ? '4K' : stats.height >= 1080 ? 'FHD' : 'HD'} · {resolution}
+                {stats.height >= 2160 ? '4K' : stats.height >= 1080 ? 'FHD' : 'HD'} · {resolution}{activeLevel ? ` · ${mbps(activeLevel.bitrate)}` : ''}
               </span>
             )}
           </div>
@@ -673,6 +729,9 @@ const HlsPlayer = ({ src, live }) => {
             <button onClick={() => setShowStats(false)} className="text-gray-500 hover:text-white"><X className="w-3 h-3" /></button>
           </div>
           <StatRow label="Resolution" value={stats.width ? `${stats.width}×${stats.height}` : '—'} />
+          {levels.length > 1 && (
+            <StatRow label="Rendition" value={`${manualLevel === -1 ? 'Auto' : 'Fixed'} · ${currentLevel + 1}/${levels.length}`} />
+          )}
           <StatRow label="Codecs" value={stats.codecs || '—'} />
           <StatRow label="Stream bitrate" value={stats.bitrate ? `${(stats.bitrate / 1e6).toFixed(1)} Mbps` : '—'} />
           <StatRow label="Connection" value={stats.bandwidth ? `${(stats.bandwidth / 1e6).toFixed(1)} Mbps` : '—'} />
@@ -738,6 +797,32 @@ const HlsPlayer = ({ src, live }) => {
             <div className="ml-auto flex items-center gap-1">
               {live && !atLive && (
                 <button onClick={goLive} className="hidden sm:inline-flex mr-1 px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap bg-[#ff1801] text-white hover:bg-[#cc0000]">GO LIVE</button>
+              )}
+              {levels.length > 1 && (
+                <div className="relative">
+                  <button onClick={() => setQualityOpen(v => !v)} title="Quality"
+                    className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold text-white/90 hover:text-white hover:bg-white/10 whitespace-nowrap">
+                    <Settings className="w-4 h-4" />
+                    <span className="hidden sm:inline">{manualLevel === -1 ? 'Auto' : `${levels[manualLevel]?.height}p`}</span>
+                  </button>
+                  {qualityOpen && (
+                    <div className="absolute bottom-full right-0 mb-2 w-56 bg-black/90 backdrop-blur border border-white/10 rounded-lg py-1 text-xs z-20">
+                      <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 font-bold">Quality</div>
+                      <button onClick={() => selectLevel(-1)}
+                        className={`w-full flex justify-between px-3 py-1.5 hover:bg-white/10 ${manualLevel === -1 ? 'text-[#ff1801] font-bold' : 'text-gray-200'}`}>
+                        <span>Auto</span>
+                        <span className="text-gray-500 font-mono">{activeLevel ? levelLabel(activeLevel) : ''}</span>
+                      </button>
+                      {levels.map(l => (
+                        <button key={l.index} onClick={() => selectLevel(l.index)}
+                          className={`w-full flex justify-between px-3 py-1.5 hover:bg-white/10 font-mono ${manualLevel === l.index ? 'text-[#ff1801] font-bold' : 'text-gray-200'}`}>
+                          <span>{levelLabel(l)}</span>
+                          {currentLevel === l.index && <span className="text-[#ff1801]">●</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
               <ControlButton onClick={() => setShowStats(v => !v)} title="Stream stats" active={showStats}><BarChart3 className="w-5 h-5" /></ControlButton>
               {document.pictureInPictureEnabled && (
@@ -1124,7 +1209,8 @@ const RaceCard = ({ race, isPast, onWatch, onHighlights }) => {
 // credentials (those stay server-side in server/channels.js so they don't leak
 // into this public client bundle). The server resolves the key to credentials
 // for the HLS and health routes.
-const streamUrlForKey = (key) => `${apiBase()}/hls/${encodeURIComponent(key)}/index.m3u8?profile=auto`;
+// The server picks the profile (adaptive bitrate ladder by default)
+const streamUrlForKey = (key) => `${apiBase()}/hls/${encodeURIComponent(key)}/index.m3u8`;
 
 // A playable stream object for a live channel from /api/channels
 const streamForChannel = (c) => ({

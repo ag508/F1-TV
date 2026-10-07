@@ -9,9 +9,18 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      # Adaptive bitrate: 1080p renditions encoded on the Intel iGPU
+      - HLS_HWACCEL=auto            # auto | vaapi | none
+      - HLS_DEFAULT_PROFILE=abr     # abr | auto | 1080p | source
+      - HLS_ABR_LADDER=1080:6000,1080:3500,1080:2000:25
+    # Give the container the Intel GPU (UHD 630) for VAAPI / Quick Sync
+    devices:
+      - /dev/dri:/dev/dri
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      # 127.0.0.1, not localhost: localhost resolves to IPv6 ::1 on Alpine,
+      # which the server doesn't listen on. Errors exit 1 instead of crashing.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

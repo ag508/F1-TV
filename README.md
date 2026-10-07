@@ -364,9 +364,44 @@ from the live mini-sector timing.
 - `LIVE_REPLAY_START` - Offset into the replay (`HH:MM:SS`, default: just before the start)
 - `LIVE_REPLAY_SPEED` - Replay speed multiplier (default 1)
 - `LIVE_REPLAY_GPS=0` - Replay without GPS/car data (preview what anonymous viewers get)
-- `X264_PRESET` - x264 preset for the 1080p restream (default `veryfast`; use `superfast` on weak CPUs)
-- `HLS_1080P_BITRATE` / `HLS_1080P_MAXRATE` - 1080p video bitrate (default `6000k` / `7500k`)
+- `HLS_DEFAULT_PROFILE` - Profile for channels that don't set one: `abr` (default), `auto`, `1080p`, `source`
+- `HLS_ABR_LADDER` - Adaptive bitrate renditions as `height:kbps[:fps]` (default `1080:6000,1080:3500,1080:2000:25`)
+- `HLS_HWACCEL` - `auto` (default; use the Intel iGPU if it works), `vaapi`, or `none`
+- `HLS_VAAPI_DEVICE` - GPU render node (default `/dev/dri/renderD128`)
+- `HLS_ABR_SOFTWARE=1` - Allow the ABR ladder on the CPU when there's no GPU (heavy; off by default)
+- `X264_PRESET` - x264 preset for CPU encoding (default `veryfast`; use `superfast` on weak CPUs)
+- `HLS_1080P_BITRATE` - Bitrate (kbps) of the single-rendition 1080p transcode (default `6000`)
 - `HLS_DVR_SECONDS` - How much of the stream is kept for resuming after buffering (default 600)
+
+## Adaptive Bitrate & Intel GPU Encoding
+
+Live channels are served as an **adaptive bitrate (ABR)** HLS ladder by default:
+three 1080p renditions (6 / 3.5 / 2 Mbps, the lightest at 25 fps) with
+keyframes aligned at every 2 s segment. The player measures each viewer's
+connection and switches rendition per segment, so a slower connection gets a
+lighter **1080p** stream instead of buffering. If a viewer still falls behind
+(e.g. after a network blip), playback speeds up to 1.08× until it's back at the
+live edge; after a long outage (>60 s) it jumps to live. Deliberately rewinding
+in the DVR window turns catch-up off until you return to live. The player's
+quality menu offers *Auto* or any fixed rendition.
+
+Encoding the ladder needs a GPU: on an Intel CPU with integrated graphics
+(e.g. i5-10400T / UHD 630) FFmpeg decodes and encodes with VAAPI (Quick Sync),
+so several 1080p50 encodes cost almost no CPU. Pass the GPU into the container:
+
+```yaml
+services:
+  f1-tv:
+    devices:
+      - /dev/dri:/dev/dri
+```
+
+At startup the server test-encodes on the GPU and logs either
+`Intel VAAPI hardware encoding available` or why it's falling back. Without a
+working GPU, `abr` falls back to a single 1080p rendition (copy when possible,
+otherwise a CPU transcode). Check what each channel is doing at
+`GET /api/hls/sessions`. On the host you can verify the GPU with
+`docker exec -it f1-tv-app vainfo`.
 
 ## Troubleshooting
 
