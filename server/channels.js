@@ -61,6 +61,7 @@ const byKey = new Map(channels.map(c => [c.key, c]));
 const resolve = (key) => byKey.get(key) || null;
 
 // Public metadata only - safe to send to the browser (no credentials)
-const publicList = () => channels.map(c => ({ key: c.key, title: c.title, quality: c.quality, english: !!c.english }));
+// `logo` (optional): an image URL shown for the channel in the feed menus
+const publicList = () => channels.map(c => ({ key: c.key, title: c.title, quality: c.quality, english: !!c.english, ...(c.logo ? { logo: c.logo } : {}) }));
 
 module.exports = { resolve, publicList };

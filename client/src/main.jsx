@@ -1,8 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
+import { loadF1Fonts } from './lib/fonts'
 
 import './index.css'
+
+loadF1Fonts()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

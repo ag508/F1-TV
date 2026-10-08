@@ -74,3 +74,7 @@ IPTV*Codes*.txt
 
 # Stray one-off scripts at repo root
 /verify_api.js
+
+# Proprietary fonts (see client/src/assets/fonts/README.md)
+client/src/assets/fonts/*
+!client/src/assets/fonts/README.md

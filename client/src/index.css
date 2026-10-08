@@ -2,8 +2,126 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-    background-color: #0b0b0d;
+/* --- Tokens: F1 brand palette, dark --- */
+:root {
+  --night: 11 11 16;       /* #0B0B10 page */
+  --carbon: 21 21 30;      /* #15151E F1 carbon black */
+  --raised: 31 31 41;      /* #1F1F29 */
+  --graphite: 56 56 63;    /* #38383F F1 grey */
+  --chalk: 247 244 241;    /* #F7F4F1 F1 off-white */
+  --steel: 148 148 152;    /* #949498 F1 warm grey */
+  --dim: 98 98 106;        /* #62626A */
+  --f1: 225 6 0;           /* #E10600 F1 red */
+  --fastest: 179 107 255;  /* purple: overall fastest */
+  --pb: 43 214 123;        /* green: personal best */
+  --caution: 255 214 10;   /* yellow flag */
+
+  /* The official Formula1 Display faces load here when their files are present
+     in src/assets/fonts (see lib/fonts.js); Saira is the free stand-in. */
+  --font-body: 'F1 Regular', 'Saira', system-ui, sans-serif;
+  --font-display: 'F1 Wide', 'Saira', system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
+  body {
     margin: 0;
-    padding: 0;
+    font-family: var(--font-body);
+    background: rgb(var(--night));
+    color: rgb(var(--chalk));
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgb(var(--f1) / 0.45); }
+  :focus-visible {
+    outline: 2px solid rgb(var(--chalk));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button { -webkit-tap-highlight-color: transparent; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--graphite)); border-radius: 10px; border: 3px solid rgb(var(--night)); }
+}
+
+@layer components {
+  /* Static backdrop: a red glow behind the top of the page and carbon below.
+     No blend modes or filters, so it never repaints while video plays. */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(70rem 32rem at 85% -12%, rgb(var(--f1) / 0.16), transparent 65%),
+      radial-gradient(50rem 30rem at -10% 10%, rgb(255 255 255 / 0.05), transparent 60%),
+      linear-gradient(180deg, rgb(var(--carbon)) 0%, rgb(var(--night)) 38rem);
+  }
+
+  /* Display type: Formula1 Display Wide, or Saira stretched to its widest */
+  .display { font-family: var(--font-display); font-stretch: 125%; font-weight: 800; letter-spacing: -0.01em; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* The F1 slash: used on the primary action and the live chip */
+  .slant { clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+
+  .card {
+    background: rgb(var(--carbon));
+    border: 1px solid rgb(var(--graphite) / 0.55);
+    border-radius: 16px;
+  }
+  .card-title { @apply display text-lg leading-none; }
+
+  .btn-f1 {
+    @apply slant inline-flex items-center justify-center gap-2 px-7 py-3 font-bold text-white transition-[background-color,transform] duration-200 ease-pit;
+    background: rgb(var(--f1));
+  }
+  .btn-f1:hover { background: rgb(255 30 20); }
+  .btn-f1:active { transform: scale(0.97); }
+
+  .btn-line {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-graphite px-4 py-2 text-sm font-semibold text-chalk transition-colors duration-200;
+  }
+  .btn-line:hover { border-color: rgb(var(--steel)); background: rgb(var(--raised)); }
+
+  .live-dot {
+    position: relative;
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: rgb(var(--f1));
+  }
+  .live-dot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: live-ring 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  /* Mobile bottom navigation clears the home indicator */
+  .safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+}
+
+@keyframes live-ring {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(3); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
 }

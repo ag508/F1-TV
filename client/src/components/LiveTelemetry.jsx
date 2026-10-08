@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Activity, CloudRain, Flag, Gauge, Radio, Satellite, Thermometer, Timer, Tag } from 'lucide-react';
 import { apiBase, feedStatusLabel } from '../lib/schedule';
 
@@ -7,7 +8,7 @@ import { apiBase, feedStatusLabel } from '../lib/schedule';
 // the official F1 live timing stream through our server.
 
 const TRACK_STATUS = {
-  '1': { label: 'Track Clear', color: '#22c55e', track: '#4b5563' },
+  '1': { label: 'Track Clear', color: '#22c55e', track: '#4A4A55' },
   '2': { label: 'Yellow Flag', color: '#facc15', track: '#a16207' },
   '4': { label: 'Safety Car', color: '#f59e0b', track: '#b45309' },
   '5': { label: 'Red Flag', color: '#ef4444', track: '#991b1b' },
@@ -145,17 +146,23 @@ const TrackMap = ({ geometry, drivers, trackStatus, positionsRef, receivedAtRef,
     let last = performance.now();
 
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = canvas.clientWidth * dpr;
-      canvas.height = canvas.clientHeight * dpr;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+      if (canvas.width === w && canvas.height === h) return;
+      canvas.width = w;
+      canvas.height = h;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
     resize();
 
+    // 30 fps is plenty for dots on a map and halves the main-thread cost next
+    // to a playing video; nothing is drawn while the map is hidden.
+    const FRAME_MS = 1000 / 30;
     const draw = (now) => {
       frame = requestAnimationFrame(draw);
+      if (document.hidden || !canvas.offsetParent || now - last < FRAME_MS - 2) return;
       const dt = Math.min(now - last, 100);
       last = now;
       const { geometry: geo, drivers: list, trackStatus: status, selected: sel, showLabels: labels } = latest.current;
@@ -176,7 +183,7 @@ const TrackMap = ({ geometry, drivers, trackStatus, positionsRef, receivedAtRef,
       ctx.beginPath();
       geo.points.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
       ctx.closePath();
-      ctx.strokeStyle = '#262626';
+      ctx.strokeStyle = '#26262F';
       ctx.lineWidth = 14;
       ctx.stroke();
       ctx.strokeStyle = statusStyle.track;
@@ -195,8 +202,8 @@ const TrackMap = ({ geometry, drivers, trackStatus, positionsRef, receivedAtRef,
       ctx.stroke();
 
       // Corner numbers
-      ctx.fillStyle = '#525252';
-      ctx.font = '600 9px "Titillium Web", sans-serif';
+      ctx.fillStyle = '#62626A';
+      ctx.font = '600 9px "Archivo", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const cxs = w / 2, cys = h / 2;
@@ -257,7 +264,7 @@ const TrackMap = ({ geometry, drivers, trackStatus, positionsRef, receivedAtRef,
         if (isSel) {
           ctx.beginPath();
           ctx.arc(x, y, 11, 0, Math.PI * 2);
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = '#F7F4F1';
           ctx.lineWidth = 2;
           ctx.stroke();
         }
@@ -269,7 +276,7 @@ const TrackMap = ({ geometry, drivers, trackStatus, positionsRef, receivedAtRef,
         ctx.lineWidth = 1.5;
         ctx.stroke();
         if (labels || isSel) {
-          ctx.font = `700 ${isSel ? 12 : 10}px "Titillium Web", sans-serif`;
+          ctx.font = `700 ${isSel ? 12 : 10}px "Archivo", sans-serif`;
           ctx.textAlign = 'left';
           ctx.fillStyle = isSel ? '#ffffff' : '#d4d4d4';
           ctx.fillText(d.tla, x + 9, y - 8);
@@ -303,68 +310,68 @@ const TyreChip = ({ tyre }) => {
     <span className="flex items-center gap-1" title={`${tyre.compound} · ${tyre.age} laps${tyre.isNew ? ' · new' : ''}`}>
       <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] font-black bg-black"
         style={{ borderColor: t.color, color: t.color }}>{t.letter}</span>
-      <span className="text-[10px] text-gray-500 font-mono w-4 text-right">{tyre.age}</span>
+      <span className="text-[10px] text-steel w-4 text-right">{tyre.age}</span>
     </span>
   );
 };
 
 const DriverBadge = ({ d }) => {
   const badge = d.retired ? ['OUT', 'bg-red-900 text-red-300']
-    : d.knockedOut ? ['KO', 'bg-gray-800 text-gray-400']
+    : d.knockedOut ? ['KO', 'bg-gray-800 text-steel']
       : d.inPit ? ['PIT', 'bg-blue-900 text-blue-300']
         : d.pitOut ? ['OUT LAP', 'bg-blue-950 text-blue-400'] : null;
   return badge ? <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${badge[1]}`}>{badge[0]}</span> : null;
 };
 
-const Leaderboard = ({ drivers, selected, onSelect, isRace }) => {
+const Leaderboard = memo(({ drivers, selected, onSelect, isRace }) => {
   const [mode, setMode] = useState('gap');
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#333] text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-graphite/70 text-xs text-steel font-semibold">
         <span>Leaderboard</span>
-        <div className="flex bg-black/40 rounded border border-[#333] overflow-hidden">
+        <div className="flex bg-black/40 rounded-full border border-graphite/70 overflow-hidden">
           {[['gap', isRace ? 'Leader' : 'Fastest'], ['interval', 'Interval']].map(([key, label]) => (
             <button key={key} onClick={() => setMode(key)}
-              className={`px-2 py-0.5 ${mode === key ? 'bg-[#ff1801] text-white' : 'text-gray-400 hover:text-white'}`}>{label}</button>
+              className={`px-2.5 py-0.5 rounded-full ${mode === key ? 'bg-f1 text-white' : 'text-steel hover:text-white'}`}>{label}</button>
           ))}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto min-h-0">
         {drivers.map(d => (
-          <button key={d.num} onClick={() => onSelect(d.num)}
-            className={`w-full flex items-center gap-2 px-3 h-8 text-xs border-b border-white/5 transition-colors ${d.num === selected ? 'bg-white/10' : 'hover:bg-white/5'} ${d.retired ? 'opacity-50' : ''}`}>
-            <span className="w-5 text-right font-mono font-bold text-gray-400">{d.position < 99 ? d.position : '-'}</span>
+          <motion.button key={d.num} layout="position" transition={{ type: 'spring', stiffness: 500, damping: 40 }} onClick={() => onSelect(d.num)}
+            className={`w-full flex items-center gap-2 px-3 h-9 text-xs border-b border-white/5 transition-colors ${d.num === selected ? 'bg-white/10 shadow-[inset_3px_0_0_rgb(247_244_241)]' : 'hover:bg-white/5'} ${d.retired ? 'opacity-50' : ''}`}>
+            <span className="w-5 text-right font-bold text-steel tnum">{d.position < 99 ? d.position : '-'}</span>
             <span className="w-1 h-4 rounded-sm" style={{ backgroundColor: d.colour }} />
             <span className="font-bold text-white w-9 text-left">{d.tla}</span>
             <DriverBadge d={d} />
-            <span className="ml-auto font-mono text-gray-300 text-[11px] truncate">
+            <span className="ml-auto text-chalk/85 text-[11px] truncate tnum">
               {(mode === 'gap' ? d.gap : d.interval) || (d.position === 1 ? (isRace ? 'Leader' : d.bestLap) : '')}
             </span>
             <TyreChip tyre={d.tyre} />
-          </button>
+          </motion.button>
         ))}
       </div>
     </div>
   );
-};
+});
 
 // --- Selected driver telemetry ---
 
 const Bar = ({ label, value, color }) => (
   <div>
-    <div className="flex justify-between text-[10px] uppercase text-gray-500 font-bold mb-1">
-      <span>{label}</span><span className="font-mono text-gray-300">{value ?? 0}%</span>
+    <div className="flex justify-between text-[10px] text-steel font-semibold mb-1">
+      <span>{label}</span><span className="text-chalk/85">{value ?? 0}%</span>
     </div>
-    <div className="h-1.5 bg-[#262626] rounded overflow-hidden">
+    <div className="h-1.5 bg-graphite/60 rounded overflow-hidden">
       <div className="h-full transition-all duration-200" style={{ width: `${Math.min(100, value || 0)}%`, backgroundColor: color }} />
     </div>
   </div>
 );
 
 const Stat = ({ label, value, accent }) => (
-  <div className="bg-black/40 border border-[#333] rounded px-2 py-1.5 min-w-0">
-    <div className="text-[9px] uppercase text-gray-500 font-bold tracking-wider">{label}</div>
-    <div className={`font-mono text-xs font-bold whitespace-nowrap ${accent || 'text-white'}`}>{value || '—'}</div>
+  <div className="bg-black/40 border border-graphite/70 rounded px-2 py-1.5 min-w-0">
+    <div className="text-[10px] text-steel font-semibold">{label}</div>
+    <div className={`text-xs font-bold whitespace-nowrap ${accent || 'text-white'}`}>{value || '—'}</div>
   </div>
 );
 
@@ -374,7 +381,7 @@ const sectorColor = (s) => (s.overallBest ? 'text-purple-400' : s.personalBest ?
 // Viewport breakpoints can't be used there because the panel is narrow even on
 // a wide screen.
 const DriverTelemetry = ({ driver, compact }) => {
-  if (!driver) return <div className="text-xs text-gray-500 p-4">Select a driver on the map or leaderboard.</div>;
+  if (!driver) return <div className="text-xs text-steel p-4">Select a driver on the map or leaderboard.</div>;
   const car = driver.car;
   const drsOpen = car?.drs >= 10;
   const pick = (full, narrow) => (compact ? narrow : full);
@@ -384,25 +391,25 @@ const DriverTelemetry = ({ driver, compact }) => {
         <div className="w-1 self-stretch rounded" style={{ backgroundColor: driver.colour }} />
         {driver.headshot && <img src={driver.headshot} alt="" className="w-12 h-12 object-contain bg-black/40 rounded" />}
         <div className="min-w-0">
-          <div className="text-white font-black text-lg leading-tight italic">{driver.tla} <span className="text-gray-500 text-sm not-italic font-mono">#{driver.num}</span></div>
-          <div className="text-[11px] text-gray-400 truncate">{driver.name} · {driver.team}</div>
+          <div className="display text-lg leading-tight">{driver.tla} <span className="text-steel text-sm font-semibold">#{driver.num}</span></div>
+          <div className="text-[11px] text-steel truncate">{driver.name} · {driver.team}</div>
         </div>
       </div>
 
       {car ? (
         <div className={pick('md:col-span-4 grid grid-cols-3 gap-2 items-center', 'grid grid-cols-3 gap-2 items-center')}>
           <div className="text-center">
-            <div className="text-3xl font-black text-white font-mono leading-none">{car.speed ?? 0}</div>
-            <div className="text-[9px] uppercase text-gray-500 font-bold">km/h</div>
+            <div className="display tnum text-3xl leading-none">{car.speed ?? 0}</div>
+            <div className="text-[10px] text-steel font-semibold">km/h</div>
           </div>
           <div className="text-center">
-            <div className="text-3xl font-black text-[#ff1801] font-mono leading-none">{car.gear || 'N'}</div>
-            <div className="text-[9px] uppercase text-gray-500 font-bold">Gear · {car.rpm ?? 0} rpm</div>
+            <div className="display tnum text-3xl text-f1 leading-none">{car.gear || 'N'}</div>
+            <div className="text-[10px] text-steel font-semibold tnum">Gear, {car.rpm ?? 0} rpm</div>
           </div>
           <div className="space-y-2">
             <Bar label="Throttle" value={car.throttle} color="#22c55e" />
             <Bar label="Brake" value={car.brake ? 100 : 0} color="#ef4444" />
-            <div className={`text-[10px] font-bold text-center rounded py-0.5 ${drsOpen ? 'bg-green-600 text-white' : 'bg-[#262626] text-gray-500'}`}>DRS</div>
+            <div className={`text-[10px] font-bold text-center rounded py-0.5 ${drsOpen ? 'bg-pb text-asphalt' : 'bg-graphite/60 text-steel'}`}>DRS</div>
           </div>
         </div>
       ) : (
@@ -428,11 +435,38 @@ const DriverTelemetry = ({ driver, compact }) => {
 
 // --- Main panel ---
 
+// Ticks on its own so the rest of the panel only re-renders on new data
+const SessionClock = ({ state, isRace }) => {
+  const [now, setNow] = useState(() => Date.now());
+  const running = !!state.clock?.running;
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [running]);
+  const clockMs = state.clock
+    ? running ? Math.max(0, state.clock.remainingMs - Math.max(0, now - state.receivedAt)) : state.clock.remainingMs
+    : null;
+  return (
+    <span className="flex items-center gap-1.5 font-bold tnum">
+      <Timer className="w-3.5 h-3.5 text-f1" />
+      {isRace && state.lapCount ? `Lap ${state.lapCount.current}/${state.lapCount.total}` : formatClock(clockMs)}
+      {state.sessionPart ? <span className="text-steel font-semibold">Q{state.sessionPart}</span> : null}
+    </span>
+  );
+};
+
+const StatusChip = ({ status }) => status && (
+  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-bold text-xs"
+    style={{ color: status.color, backgroundColor: `${status.color}1a`, border: `1px solid ${status.color}55` }}>
+    <Flag className="w-3 h-3" /> {status.label}
+  </span>
+);
+
 const LiveTelemetry = ({ compact = false }) => {
   const { state, connected, positionsRef, receivedAtRef } = useLiveStream();
   const [picked, setSelected] = useState(null);
   const [showLabels, setShowLabels] = useState(true);
-  const [tick, setTick] = useState(0);
 
   const session = state?.session;
   const year = session?.startUtc ? new Date(session.startUtc).getUTCFullYear() : 2026;
@@ -440,72 +474,54 @@ const LiveTelemetry = ({ compact = false }) => {
   const geometry = useTrackGeometry(circuit);
   const drivers = useMemo(() => state?.drivers || [], [state]);
   const isRace = session?.type === 'Race';
+  const isRaceLike = isRace || session?.name === 'Sprint';
   // Default selection: the leader
   const selected = picked ?? drivers[0]?.num ?? null;
 
-  // Count the session clock down locally between snapshots
-  useEffect(() => {
-    const id = setInterval(() => setTick(Date.now()), 500);
-    return () => clearInterval(id);
-  }, []);
-  const clockMs = state?.clock
-    ? state.clock.running
-      ? Math.max(0, state.clock.remainingMs - Math.max(0, tick - state.receivedAt))
-      : state.clock.remainingMs
-    : null;
-
-  const status = TRACK_STATUS[state?.trackStatus?.code] || null;
-  const selectedDriver = drivers.find(d => d.num === selected);
-  const latestMessage = state?.raceControl?.[0];
-
   if (!state) {
     return (
-      <div className="flex items-center justify-center h-64 text-gray-500 text-sm gap-2">
-        <Activity className="w-4 h-4 animate-pulse text-[#ff1801]" /> Connecting to live timing…
+      <div className="flex items-center justify-center h-64 text-steel text-sm gap-2">
+        <Activity className="w-4 h-4 animate-pulse text-f1" /> Connecting to live timing…
       </div>
     );
   }
 
+  const status = TRACK_STATUS[state.trackStatus?.code] || null;
+  const selectedDriver = drivers.find(d => d.num === selected);
+  const latestMessage = state.raceControl?.[0];
   const trackMap = geometry ? (
     <TrackMap geometry={geometry} drivers={drivers} trackStatus={state.trackStatus} positionsRef={positionsRef}
       receivedAtRef={receivedAtRef} selected={selected} onSelect={setSelected} showLabels={showLabels} />
   ) : (
-    <div className="h-full flex items-center justify-center text-gray-600 text-xs">Loading circuit layout…</div>
+    <div className="h-full flex items-center justify-center text-dim text-xs">Loading circuit layout…</div>
   );
-  const isRaceLike = isRace || session?.name === 'Sprint';
+  const replayBadge = state.source === 'replay' && <span className="px-2 py-0.5 rounded-full bg-fastest/20 text-fastest font-bold text-[11px]">Replay</span>;
 
   // Narrow side panel next to the video player
   if (compact) {
     return (
       <div className="flex flex-col h-full min-h-0 text-xs">
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-[#333] bg-black/40">
-          <span className="px-2 py-0.5 rounded bg-[#1a1a1a] border border-[#333] text-gray-300 font-bold">{session?.name}</span>
-          {status && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded font-bold" style={{ color: status.color, backgroundColor: `${status.color}1a`, border: `1px solid ${status.color}55` }}>
-              <Flag className="w-3 h-3" /> {status.label}
-            </span>
-          )}
-          <span className="flex items-center gap-1 font-mono text-white font-bold">
-            <Timer className="w-3 h-3 text-[#ff1801]" />
-            {isRace && state.lapCount ? `LAP ${state.lapCount.current}/${state.lapCount.total}` : formatClock(clockMs)}
-          </span>
-          {state.weather && <span className="text-gray-500">{state.weather.air}° / {state.weather.track}°</span>}
-          <span className={`ml-auto w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-yellow-500'}`} title={connected ? 'Connected' : 'Reconnecting'} />
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 border-b border-graphite/70">
+          <span className="font-bold">{session?.name}</span>
+          <StatusChip status={status} />
+          <SessionClock state={state} isRace={isRace} />
+          {state.weather && <span className="text-steel tnum">{state.weather.air}° / {state.weather.track}°</span>}
+          <span className={`ml-auto w-2 h-2 rounded-full ${connected ? 'bg-pb' : 'bg-caution'}`} title={connected ? 'Connected' : 'Reconnecting'} />
         </div>
-        <div className="relative h-[32vh] min-h-[180px] shrink-0 border-b border-[#333]">
+        <div className="relative h-[32vh] min-h-[180px] shrink-0 border-b border-graphite/70">
           {trackMap}
-          {state.source === 'replay' && <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-purple-900/70 text-purple-300 font-bold text-[10px]">REPLAY</span>}
+          {replayBadge && <span className="absolute top-2 left-2">{replayBadge}</span>}
         </div>
         {latestMessage && (
-          <div className="px-3 py-1.5 border-b border-[#333] bg-black/60 text-[10px] truncate shrink-0" title={latestMessage.Message}>
-            <span className="text-[#ff1801] font-bold mr-1.5">RC</span>
-            <span className="text-gray-300">{latestMessage.Message}</span>
+          <div className="px-3 py-1.5 border-b border-graphite/70 bg-black/40 text-[11px] truncate shrink-0" title={latestMessage.Message}>
+            <span className="text-f1 font-bold mr-1.5">Race control</span>
+            <span className="text-chalk/85">{latestMessage.Message}</span>
           </div>
         )}
         <div className="flex-1 min-h-[160px]">
           <Leaderboard drivers={drivers} selected={selected} onSelect={setSelected} isRace={isRaceLike} />
         </div>
-        <div className="border-t border-[#333] bg-black/30 shrink-0">
+        <div className="border-t border-graphite/70 bg-black/20 shrink-0">
           <DriverTelemetry driver={selectedDriver} compact />
         </div>
       </div>
@@ -515,62 +531,52 @@ const LiveTelemetry = ({ compact = false }) => {
   return (
     <div className="flex flex-col">
       {/* Session bar */}
-      <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-3 border-b border-[#333] bg-black/40 text-xs">
-        <span className="flex items-center gap-2 font-bold text-white uppercase tracking-wider">
-          <Activity className="w-4 h-4 text-[#ff1801]" /> Live Telemetry
-        </span>
-        <span className="px-2 py-0.5 rounded bg-[#1a1a1a] border border-[#333] text-gray-300 font-bold">{session?.name}</span>
-        <span className="text-gray-400">{feedStatusLabel(session?.status)}</span>
-        {status && (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded font-bold" style={{ color: status.color, backgroundColor: `${status.color}1a`, border: `1px solid ${status.color}55` }}>
-            <Flag className="w-3 h-3" /> {status.label}
-          </span>
-        )}
-        <span className="flex items-center gap-1 font-mono text-white font-bold">
-          <Timer className="w-3 h-3 text-[#ff1801]" />
-          {isRace && state.lapCount ? `LAP ${state.lapCount.current}/${state.lapCount.total}` : formatClock(clockMs)}
-          {state.sessionPart ? <span className="text-gray-400 ml-1">Q{state.sessionPart}</span> : null}
-        </span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 md:px-6 py-3 border-b border-graphite/70 text-sm">
+        <span className="display text-base">{session?.name}</span>
+        <span className="text-steel">{feedStatusLabel(session?.status)}</span>
+        <StatusChip status={status} />
+        <SessionClock state={state} isRace={isRace} />
         {state.weather && (
-          <span className="flex items-center gap-2 text-gray-400">
-            <Thermometer className="w-3 h-3" /> Air {state.weather.air}° · Track {state.weather.track}°
-            {state.weather.rain && <span className="flex items-center gap-1 text-blue-400"><CloudRain className="w-3 h-3" /> Rain</span>}
+          <span className="flex items-center gap-2 text-steel tnum">
+            <Thermometer className="w-3.5 h-3.5" /> Air {state.weather.air}°, track {state.weather.track}°
+            {state.weather.rain && <span className="flex items-center gap-1 text-[#3b82f6]"><CloudRain className="w-3.5 h-3.5" /> Rain</span>}
           </span>
         )}
         <span className="ml-auto flex items-center gap-2">
-          {state.source === 'replay' && <span className="px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 font-bold">REPLAY</span>}
-          <span className={`flex items-center gap-1 ${connected ? 'text-green-400' : 'text-yellow-400'}`}>
-            <Radio className="w-3 h-3" /> {connected ? 'Connected' : 'Reconnecting'}
+          {replayBadge}
+          <span className={`flex items-center gap-1.5 text-xs ${connected ? 'text-pb' : 'text-caution'}`}>
+            <Radio className="w-3.5 h-3.5" /> {connected ? 'Connected' : 'Reconnecting'}
           </span>
         </span>
       </div>
 
       {/* Map + leaderboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12">
-        <div className="lg:col-span-8 relative h-[340px] md:h-[420px] flex flex-col border-b lg:border-b-0 lg:border-r border-[#333]">
+        <div className="lg:col-span-8 relative h-[320px] md:h-[440px] flex flex-col border-b lg:border-b-0 lg:border-r border-graphite/70">
           <div className="flex-1 min-h-0">{trackMap}</div>
           {latestMessage && (
-            <div className="px-3 py-2 border-t border-[#333] bg-black/60 text-[11px] truncate">
-              <span className="text-[#ff1801] font-bold mr-2">RACE CONTROL</span>
-              <span className="text-gray-300">{latestMessage.Message}</span>
+            <div className="px-4 py-2 border-t border-graphite/70 bg-black/40 text-xs truncate">
+              <span className="text-f1 font-bold mr-2">Race control</span>
+              <span className="text-chalk/85">{latestMessage.Message}</span>
             </div>
           )}
-          <div className="absolute top-3 left-3 flex flex-col gap-1 text-[10px]">
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-black/70 border border-[#333] text-gray-400" title={state.hasPositions ? 'Car GPS positions from F1 live timing' : 'GPS needs an F1TV token on the server; positions are interpolated from live mini-sector timing'}>
-              {state.hasPositions ? <><Satellite className="w-3 h-3 text-green-400" /> GPS positions</> : <><Gauge className="w-3 h-3 text-yellow-400" /> Positions from mini-sectors</>}
+          <div className="absolute top-3 left-3 flex flex-col gap-1.5 text-[11px]">
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 border border-graphite/70 text-steel"
+              title={state.hasPositions ? 'Car GPS positions from F1 live timing' : 'GPS needs an F1 TV token on the server; positions are estimated from live mini-sector timing'}>
+              {state.hasPositions ? <><Satellite className="w-3 h-3 text-pb" /> GPS positions</> : <><Gauge className="w-3 h-3 text-caution" /> Estimated positions</>}
             </span>
-            <button onClick={() => setShowLabels(v => !v)} className="flex items-center gap-1 px-2 py-0.5 rounded bg-black/70 border border-[#333] text-gray-400 hover:text-white w-fit">
+            <button onClick={() => setShowLabels(v => !v)} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 border border-graphite/70 text-steel hover:text-chalk w-fit">
               <Tag className="w-3 h-3" /> {showLabels ? 'Hide' : 'Show'} names
             </button>
           </div>
         </div>
-        <div className="lg:col-span-4 h-[320px] md:h-[420px]">
+        <div className="lg:col-span-4 h-[380px] md:h-[440px]">
           <Leaderboard drivers={drivers} selected={selected} onSelect={setSelected} isRace={isRaceLike} />
         </div>
       </div>
 
       {/* Selected driver */}
-      <div className="border-t border-[#333] bg-black/30">
+      <div className="border-t border-graphite/70 bg-black/20">
         <DriverTelemetry driver={selectedDriver} />
       </div>
     </div>
