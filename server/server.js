@@ -401,18 +401,42 @@ app.get('/api/live/stream', (req, res) => {
 // Circuit outline in F1 live timing coordinates (same system as Position.z).
 // MultiViewer publishes outlines + mini-sector indexes per circuit/season; for
 // brand-new circuits fall back to tracing a lap from OpenF1 location data.
-const circuitCache = new Map();
+const circuitCache = new Map();   // key -> { circuit, expires } (circuit null = not available)
+const circuitPending = new Map(); // key -> Promise, so parallel requests share one lookup
+const CIRCUIT_MISS_TTL = 6 * 60 * 60 * 1000;  // no outline anywhere: ask again in 6 h
+const CIRCUIT_ERROR_TTL = 5 * 60 * 1000;      // lookup failed (network, rate limit): retry in 5 min
+
+// OpenF1 allows 3 requests/second per client. Every OpenF1 call goes through
+// one queue spaced under that, and a 429 is retried after its Retry-After.
+let openf1Queue = Promise.resolve();
+const OPENF1_SPACING_MS = 400;
+function openf1Get(url, config = {}) {
+  const run = async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await axios.get(url, { timeout: 15000, ...config });
+      } catch (err) {
+        if (err.response?.status !== 429 || attempt >= 4) throw err;
+        const wait = (Number(err.response.headers?.['retry-after']) || 1) * 1000 * attempt;
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  };
+  const request = openf1Queue.then(run);
+  openf1Queue = request.catch(() => { }).then(() => new Promise(r => setTimeout(r, OPENF1_SPACING_MS)));
+  return request;
+}
 
 async function circuitFromOpenF1(circuitKey) {
-  const { data: sessions } = await axios.get('https://api.openf1.org/v1/sessions', { params: { circuit_key: circuitKey }, timeout: 15000 });
+  const { data: sessions } = await openf1Get('https://api.openf1.org/v1/sessions', { params: { circuit_key: circuitKey } });
   const finished = sessions.filter(s => Date.parse(s.date_end) < Date.now()).sort((a, b) => Date.parse(b.date_start) - Date.parse(a.date_start));
   for (const session of finished.slice(0, 3)) {
-    const { data: laps } = await axios.get('https://api.openf1.org/v1/laps', { params: { session_key: session.session_key, lap_number: 3 }, timeout: 15000 });
+    const { data: laps } = await openf1Get('https://api.openf1.org/v1/laps', { params: { session_key: session.session_key, lap_number: 3 } });
     const lap = laps.find(l => l.lap_duration && !l.is_pit_out_lap && l.date_start);
     if (!lap) continue;
     const start = new Date(lap.date_start);
     const end = new Date(start.getTime() + lap.lap_duration * 1000);
-    const { data: points } = await axios.get(
+    const { data: points } = await openf1Get(
       `https://api.openf1.org/v1/location?session_key=${session.session_key}&driver_number=${lap.driver_number}&date>=${start.toISOString()}&date<${end.toISOString()}`,
       { timeout: 20000 }
     );
@@ -429,8 +453,25 @@ app.get('/api/live/circuit', async (req, res) => {
   if (!circuitKey) return res.status(400).json({ error: 'Missing circuit key' });
 
   const cacheKey = `${circuitKey}-${year}`;
-  if (circuitCache.has(cacheKey)) return res.json(circuitCache.get(cacheKey));
+  const cached = circuitCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    return cached.circuit ? res.json(cached.circuit) : res.status(404).json({ error: 'Circuit layout not available' });
+  }
 
+  if (!circuitPending.has(cacheKey)) {
+    circuitPending.set(cacheKey, loadCircuit(circuitKey, year)
+      .then(({ circuit, failed }) => {
+        circuitCache.set(cacheKey, { circuit, expires: circuit ? Infinity : Date.now() + (failed ? CIRCUIT_ERROR_TTL : CIRCUIT_MISS_TTL) });
+        return circuit;
+      })
+      .finally(() => circuitPending.delete(cacheKey)));
+  }
+  const circuit = await circuitPending.get(cacheKey);
+  if (!circuit) return res.status(404).json({ error: 'Circuit layout not available' });
+  res.json(circuit);
+});
+
+async function loadCircuit(circuitKey, year) {
   let circuit = null;
   for (let y = year; y >= year - 4 && !circuit; y--) {
     try {
@@ -447,14 +488,16 @@ app.get('/api/live/circuit', async (req, res) => {
       }
     } catch { /* not published for this season, try the previous one */ }
   }
-  if (!circuit) {
-    try { circuit = await circuitFromOpenF1(circuitKey); } catch (err) { console.warn('[Circuit] OpenF1 fallback failed:', err.message); }
+  if (circuit) return { circuit };
+  try {
+    circuit = await circuitFromOpenF1(circuitKey);
+    if (circuit) console.log(`[Circuit] ${circuitKey}: traced from OpenF1 location data`);
+    return { circuit };
+  } catch (err) {
+    console.warn(`[Circuit] ${circuitKey}: OpenF1 fallback failed (${err.message}), retrying in ${CIRCUIT_ERROR_TTL / 60000} min`);
+    return { circuit: null, failed: true };
   }
-  if (!circuit) return res.status(404).json({ error: 'Circuit layout not available' });
-
-  circuitCache.set(cacheKey, circuit);
-  res.json(circuit);
-});
+}
 
 
 // 4. Proxy Video (CORS Bypass & HLS Rewriter)
