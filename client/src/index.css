@@ -125,3 +125,10 @@
   from { opacity: 0; transform: translateY(6px) scale(0.97); }
   to { opacity: 1; transform: none; }
 }
+
+/* Footer flag: slides one 22px pattern repeat per loop (transform only) */
+.chequer-run { animation: chequer-run 1.1s linear infinite; will-change: transform; }
+@keyframes chequer-run {
+  from { transform: translateX(0); }
+  to { transform: translateX(22px); }
+}

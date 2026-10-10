@@ -3,7 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { CalendarDays, Home, Play, Radio, Trophy } from 'lucide-react';
 import { weekendState } from './lib/schedule';
 import { circuitKeyFor } from './lib/circuits';
-import { useChannels, useLiveStatus, useNow, useSeason } from './lib/data';
+import { revalidate, useChannels, useLiveStatus, useNow, useSeason } from './lib/data';
 import { pageVariants, spring } from './lib/motion';
 import StartLights from './components/StartLights';
 import { FeedSheet } from './components/Feeds';
@@ -115,18 +115,24 @@ const BottomNav = ({ tab, go, liveName }) => (
 
 // Chequered flag band, the season as a row of rounds, and a giant outlined
 // wordmark running off the bottom edge. Purely graphic: no small print.
+const CHEQUER_MASK = {
+  maskImage: 'linear-gradient(90deg, transparent, black 25%, black 75%, transparent)',
+  WebkitMaskImage: 'linear-gradient(90deg, transparent, black 25%, black 75%, transparent)',
+};
 const CHEQUER = {
   backgroundImage: 'conic-gradient(rgb(247 244 241) 25%, rgb(11 11 16) 0 50%, rgb(247 244 241) 0 75%, rgb(11 11 16) 0)',
   backgroundSize: '22px 22px',
-  maskImage: 'linear-gradient(90deg, transparent, black 25%, black 75%, transparent)',
-  WebkitMaskImage: 'linear-gradient(90deg, transparent, black 25%, black 75%, transparent)',
 };
 
 const Footer = ({ go, weekends, heroRace }) => {
   const done = weekends.filter(w => w.state.finished).length;
   return (
     <footer className="relative mt-24 overflow-hidden bg-carbon border-t border-graphite/60 pb-16 sm:pb-0">
-      <div aria-hidden="true" className="h-[22px] opacity-90" style={CHEQUER} />
+      {/* The flag runs left to right: one pattern repeat (22px) per loop, moved
+          with a transform so it never repaints */}
+      <div aria-hidden="true" className="h-[22px] overflow-hidden opacity-90" style={CHEQUER_MASK}>
+        <div className="h-full w-[calc(100%+44px)] -ml-[44px] chequer-run" style={CHEQUER} />
+      </div>
       <div aria-hidden="true" className="absolute -top-10 right-0 w-[40rem] h-[24rem] bg-[radial-gradient(closest-side,rgb(225_6_0/0.18),transparent)]" />
 
       <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-10 flex flex-col-reverse sm:flex-row sm:items-end justify-between gap-8">
@@ -147,12 +153,17 @@ const Footer = ({ go, weekends, heroRace }) => {
         </nav>
       </div>
 
-      <motion.div aria-hidden="true" className="relative max-w-[1400px] mx-auto px-4 sm:px-6 mt-8 flex items-end gap-[0.06em] select-none leading-[0.78] h-[clamp(2.5rem,11.6vw,12.4rem)] overflow-hidden"
+      {/* Wordmark as SVG: textLength stretches it to exactly the container
+          width at every screen size and with either font, and the bottom of
+          the letters runs off the edge */}
+      <motion.div aria-hidden="true" className="relative max-w-[1400px] mx-auto px-4 sm:px-6 mt-8 select-none"
         initial={{ y: 40, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}>
-        <span className="flex gap-[0.05em] -skew-x-[20deg] self-stretch pt-[0.12em] text-[clamp(3rem,14vw,15rem)]">
-          <span className="w-[0.12em] bg-f1" /><span className="w-[0.12em] bg-f1/60" />
-        </span>
-        <span className="display text-[clamp(3rem,14vw,15rem)] text-transparent [-webkit-text-stroke:1.5px_rgb(98_98_106)] whitespace-nowrap">StreamHub</span>
+        <svg viewBox="0 0 1000 132" className="block w-full h-auto overflow-hidden">
+          <polygon points="38,0 66,0 28,150 0,150" fill="rgb(225 6 0)" />
+          <polygon points="78,0 106,0 68,150 40,150" fill="rgb(225 6 0 / 0.6)" />
+          <text x="118" y="150" textLength="880" lengthAdjust="spacingAndGlyphs" className="display" fontSize="176"
+            fill="none" stroke="rgb(98 98 106)" strokeWidth="1.5" vectorEffect="non-scaling-stroke">StreamHub</text>
+        </svg>
       </motion.div>
     </footer>
   );
@@ -177,6 +188,28 @@ const App = () => {
   // Hero = the first weekend that isn't fully finished. A race whose start
   // time has passed stays here (LIVE) until the feed says it has ended.
   const hero = useMemo(() => weekends.find(w => !w.state.finished) || weekends.at(-1), [weekends]);
+
+  // Results freshness. During a race weekend (a session running, or one ended
+  // in the last 6 h) standings and the latest result are rechecked every
+  // 2 minutes, otherwise every 20. A session ending, or the live feed changing
+  // status (e.g. chequered flag, finalised), triggers a recheck straight away.
+  const RESULT_KEYS = ['driver-standings', 'latest-session'];
+  const hot = !!hero?.state.sessions.some(s => s.phase === 'live' || (s.phase === 'done' && now - s.end < 6 * 3600e3));
+  useEffect(() => {
+    const id = setInterval(() => revalidate(RESULT_KEYS), hot ? 2 * 60e3 : 20 * 60e3);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hot]);
+  const doneCount = weekends.reduce((n, w) => n + w.state.sessions.filter(x => x.phase === 'done').length, 0);
+  const feedStatus = feed?.session ? `${feed.session.key}-${feed.session.status}` : null;
+  const seen = useRef({ doneCount: null, feedStatus: null });
+  useEffect(() => {
+    const last = seen.current;
+    const changed = (last.doneCount !== null && doneCount !== last.doneCount) || (last.feedStatus !== null && feedStatus && feedStatus !== last.feedStatus);
+    seen.current = { doneCount, feedStatus: feedStatus || last.feedStatus };
+    if (changed) revalidate(RESULT_KEYS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneCount, feedStatus]);
 
   // OpenF1 circuit key per round, so outlines can be drawn from real data
   const circuitKeys = useMemo(

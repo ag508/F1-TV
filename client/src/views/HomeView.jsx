@@ -5,9 +5,9 @@ import StartLights from '../components/StartLights';
 import CircuitTrace from '../components/CircuitTrace';
 import { useCircuit } from '../lib/circuitData';
 import { Countdown, SessionTimeline, WeatherStrip } from '../components/Weekend';
-import { AnimatedNumber, Avatar, Skeleton, Stat } from '../components/ui';
+import { AnimatedNumber, Avatar, ProvisionalBadge, Skeleton, Stat } from '../components/ui';
 import { circuitImage } from '../lib/circuits';
-import { colourFor, raceRecap, titleFight, useCircuitWinners, useDriverStandings, useGrid, useSeasonResults, useWeekendWeather } from '../lib/data';
+import { colourFor, raceRecap, titleFight, useCircuitWinners, useGrid, useSeasonResults, useStandings, useWeekendWeather } from '../lib/data';
 import { feedStatusLabel } from '../lib/schedule';
 import { ease } from '../lib/motion';
 
@@ -150,11 +150,55 @@ const PodiumStep = ({ r, grid, place }) => {
   );
 };
 
+// A session only OpenF1 has published so far (often a sprint, or a race just finished)
+const OpenF1Result = ({ latest }) => {
+  const { session, result } = latest;
+  const finished = result.filter(r => !r.dnf && !r.dns && !r.dsq);
+  const out = result.filter(r => r.dnf || r.dns || r.dsq);
+  const p2 = result.find(r => r.position === 2);
+  return (
+    <article className="card p-5 sm:p-6 h-full" aria-labelledby="last-race">
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs text-steel">Latest result <ProvisionalBadge /></div>
+          <h2 id="last-race" className="display text-xl sm:text-2xl leading-tight mt-1">{session.country || session.location} {session.name}</h2>
+        </div>
+        <Trophy className="w-5 h-5 text-steel shrink-0" />
+      </div>
+      <ol className="grid grid-cols-3 gap-2 sm:gap-3 items-end">
+        {[1, 0, 2].map(i => {
+          const r = result.find(x => x.position === i + 1);
+          return r && (
+            <li key={i} className={`relative flex flex-col items-center text-center rounded-card bg-raised/60 border border-graphite/50 px-2 pt-4 pb-3 ${i === 0 ? 'sm:-mt-3' : ''}`}>
+              <span className="absolute top-2 left-3 display text-lg text-steel">{i + 1}</span>
+              <Avatar src={r.headshot} colour={r.colour || undefined} code={r.acronym} size={i === 0 ? 72 : 60} />
+              <div className="mt-2 font-bold leading-tight truncate max-w-full">{r.lastName}</div>
+              <div className="text-xs text-steel truncate max-w-full">{r.team}</div>
+              <div className="tnum text-xs mt-1.5 text-chalk/80">{i === 0 ? `${r.laps} laps` : typeof r.gap === 'number' ? `+${r.gap.toFixed(3)}` : r.gap}</div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4 mt-6 pt-5 border-t border-graphite/50">
+        <Stat label="Winning margin">{typeof p2?.gap === 'number' ? <span className="tnum">+{p2.gap.toFixed(3)} s</span> : '—'}</Stat>
+        <Stat label="Points to the winner"><span className="tnum">{result[0]?.points ?? '—'}</span></Stat>
+        <Stat label="Laps"><span className="tnum">{result[0]?.laps ?? '—'}</span></Stat>
+        <Stat label="Finishers"><span className="tnum">{finished.length} of {result.length}</span></Stat>
+        <Stat label="Retirements" sub={out.slice(0, 3).map(r => r.acronym).join(', ') || 'None'}><span className="tnum">{out.length}</span></Stat>
+      </div>
+    </article>
+  );
+};
+
 const LastRace = ({ season }) => {
   const { data, loading } = useSeasonResults(season);
+  const { latest } = useStandings(season);
   const { data: grid } = useGrid();
+  const lastRound = data?.rounds?.at(-1);
+  const lastRaceAt = lastRound ? Date.parse(`${lastRound.date}T${lastRound.time || '12:00:00Z'}`) : 0;
+  if (latest?.result?.length && Date.parse(latest.session.start) > lastRaceAt + 3600e3) return <OpenF1Result latest={latest} />;
   if (loading) return <Skeleton className="h-[360px]" />;
-  const recap = raceRecap(data?.rounds?.at(-1));
+  const recap = raceRecap(lastRound);
   if (!recap) return null;
   const { round } = recap;
   return (
@@ -191,21 +235,23 @@ const LastRace = ({ season }) => {
 
 // --- Title fight: who can still catch the leader ---
 
-const TitleFight = ({ weekends }) => {
-  const { data, loading } = useDriverStandings();
+const TitleFight = ({ weekends, season }) => {
+  const { data, loading } = useStandings(season);
   const { data: grid } = useGrid();
-  if (loading) return <Skeleton className="h-[360px]" />;
-  const fight = titleFight(data?.list, weekends);
+  if (loading || !data) return <Skeleton className="h-[360px]" />;
+  const fight = titleFight(data.drivers, weekends);
   if (!fight) return null;
-  const top = data.list.slice(0, 5);
+  const top = data.drivers.slice(0, 5);
   const scale = fight.leader + fight.available || 1;
-  const leader = data.list[0];
+  const leader = data.drivers[0];
 
   return (
     <article className="card p-5 sm:p-6 h-full flex flex-col" aria-labelledby="title-fight">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs text-steel">Drivers' title</div>
+          <div className="flex items-center gap-2 text-xs text-steel">
+            {data.provisional ? <>After {data.provisional.label} <ProvisionalBadge /></> : `Drivers' title, after round ${data.round}`}
+          </div>
           <h2 id="title-fight" className="display text-xl sm:text-2xl leading-tight mt-1">Title fight</h2>
         </div>
         <TrendingUp className="w-5 h-5 text-steel shrink-0" />
@@ -320,7 +366,7 @@ const HomeView = ({ hero, weekends, feed, circuitKeys, now, onWatch, goTo }) => 
         total={weekends.length} now={now} onWatch={onWatch} onLive={() => goTo('live')} />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
         <div className="lg:col-span-7"><LastRace season={season} /></div>
-        <div className="lg:col-span-5"><TitleFight weekends={weekends} /></div>
+        <div className="lg:col-span-5"><TitleFight weekends={weekends} season={season} /></div>
         <div className="lg:col-span-5"><PastWinners race={hero.race} /></div>
         <div className="lg:col-span-7"><UpNext weekends={weekends} heroRace={hero.race} circuitKeys={circuitKeys} now={now} onCalendar={() => goTo('calendar')} /></div>
       </div>

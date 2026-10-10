@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { Monitor, Play, RefreshCw, X, Zap } from 'lucide-react';
 import { ARCHIVE_STREAMS, useFeedHealth } from '../lib/feeds';
 import ChannelLogo from './ChannelLogo';
+import { useMedia } from '../lib/useMedia';
 import { streamForChannel } from '../lib/streams';
 import { ease, spring } from '../lib/motion';
 
@@ -80,21 +81,10 @@ export const FeedList = ({ streams, health, isArchive, onPlay }) => (
   </ul>
 );
 
-const useIsMobile = () => {
-  const query = '(max-width: 639px)';
-  const [mobile, setMobile] = useState(() => window.matchMedia(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const on = () => setMobile(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return mobile;
-};
 
 // Drawer on desktop, bottom sheet (drag down to dismiss) on mobile
 export const FeedSheet = ({ isOpen, onClose, race, isArchive, channels, onPlay }) => {
-  const mobile = useIsMobile();
+  const mobile = useMedia('(max-width: 639px)');
   const drag = useDragControls();
   const { health, checking, checkAll } = useFeedHealth(channels, isOpen && !isArchive);
   const closeBtn = useRef(null);

@@ -7,6 +7,7 @@ import StartLights from './StartLights';
 import { AnimatePresence, motion } from 'motion/react';
 import { streamForChannel } from '../lib/streams';
 import ChannelLogo from './ChannelLogo';
+import { DESKTOP, LANDSCAPE_PHONE, useMedia } from '../lib/useMedia';
 
 const PlayerStatus = ({ status }) => {
   if (!status || status.phase === 'playing') return null;
@@ -144,9 +145,9 @@ const formatDuration = (seconds) => {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 };
 
-const ControlButton = ({ onClick, title, children, active }) => (
+const ControlButton = ({ onClick, title, children, active, className = '' }) => (
   <button onClick={onClick} title={title} aria-label={title} aria-pressed={active}
-    className={`grid place-items-center w-10 h-10 rounded-full transition-[color,background-color,transform] duration-200 active:scale-90 ${active ? 'text-white bg-white/15' : 'text-chalk/85 hover:text-chalk hover:bg-white/10'}`}>
+    className={`${className} grid place-items-center w-10 h-10 shrink-0 rounded-full transition-[color,background-color,transform] duration-200 active:scale-90 ${active ? 'text-white bg-white/15' : 'text-chalk/85 hover:text-chalk hover:bg-white/10'}`}>
     {children}
   </button>
 );
@@ -514,8 +515,20 @@ const HlsPlayer = ({ src, live }) => {
   const toggleMute = () => { const v = videoRef.current; v.muted = !v.muted; if (!v.muted && v.volume === 0) v.volume = 0.5; };
   const changeVolume = (value) => { const v = videoRef.current; v.volume = value; v.muted = value === 0; };
   const toggleFullscreen = () => {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
-    else containerRef.current?.requestFullscreen?.().catch(() => { });
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => { }); return; }
+    const el = containerRef.current;
+    if (el?.requestFullscreen) {
+      el.requestFullscreen().then(() => screen.orientation?.lock?.('landscape').catch(() => { })).catch(() => { });
+    } else {
+      videoRef.current?.webkitEnterFullscreen?.(); // iOS Safari
+    }
+  };
+  // On touch screens a tap shows or hides the controls (like YouTube); play
+  // and pause are on the button. With a mouse, a click toggles playback.
+  const lastPointer = useRef('mouse');
+  const onVideoTap = () => {
+    if (lastPointer.current !== 'touch') { togglePlay(); return; }
+    if (controlsVisible && playing) { setControlsVisible(false); clearTimeout(hideTimer.current); } else showControls();
   };
   const togglePip = async () => {
     try {
@@ -586,13 +599,14 @@ const HlsPlayer = ({ src, live }) => {
   return (
     <div ref={containerRef}
       className={`relative w-full h-full bg-black select-none overflow-hidden ${hideUi ? 'cursor-none' : ''}`}
-      onMouseMove={showControls} onMouseLeave={() => playing && setControlsVisible(false)}>
-      <video ref={videoRef} autoPlay playsInline onClick={togglePlay} onDoubleClick={toggleFullscreen}
+      onPointerDown={(e) => { lastPointer.current = e.pointerType; }}
+      onMouseMove={() => lastPointer.current !== 'touch' && showControls()} onMouseLeave={() => playing && lastPointer.current !== 'touch' && setControlsVisible(false)}>
+      <video ref={videoRef} autoPlay playsInline onClick={onVideoTap} onDoubleClick={toggleFullscreen}
         className="w-full h-full bg-black object-contain" />
       <PlayerStatus status={status} />
 
       {smoothNotice && status.phase === 'playing' && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 px-3.5 py-1.5 rounded-full bg-black/85 border border-graphite text-xs text-chalk/90 whitespace-nowrap">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 w-max max-w-[90%] px-3.5 py-1.5 rounded-[14px] bg-black/85 border border-graphite text-xs text-center text-chalk/90">
           {smoothNotice}
         </div>
       )}
@@ -657,7 +671,7 @@ const HlsPlayer = ({ src, live }) => {
 
       {/* Bottom controls */}
       {ready && (
-        <div className={`absolute bottom-0 inset-x-0 px-4 pb-3 pt-16 bg-gradient-to-t from-black/90 via-black/50 to-transparent transition-[opacity,transform] duration-300 ease-pit ${hideUi ? 'opacity-0 translate-y-2 pointer-events-none' : 'opacity-100'}`}>
+        <div className={`absolute bottom-0 inset-x-0 px-2 sm:px-4 pb-1 sm:pb-3 pt-10 sm:pt-16 bg-gradient-to-t from-black/90 via-black/50 to-transparent transition-[opacity,transform] duration-300 ease-pit ${hideUi ? 'opacity-0 translate-y-2 pointer-events-none' : 'opacity-100'}`}>
           {/* DVR / seek bar */}
           <div className="relative h-5 flex items-center cursor-pointer group/seek" role="slider" aria-label="Seek"
             aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(playedPct)}
@@ -698,10 +712,10 @@ const HlsPlayer = ({ src, live }) => {
                   className="w-20 ml-1 accent-[rgb(225_6_0)] cursor-pointer" />
               </div>
             </div>
-            <span className="ml-2 text-sm text-chalk/80 tnum whitespace-nowrap">
+            <span className="ml-1 sm:ml-2 text-xs sm:text-sm text-chalk/80 tnum whitespace-nowrap truncate">
               {live ? (atLive ? 'Live' : `${formatDuration(behindLive)} behind live`) : `${formatDuration(current - start)} / ${formatDuration(end - start)}`}
             </span>
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
               {live && !atLive && (
                 <button onClick={goLive} className="slant hidden sm:inline-flex mr-1 px-4 py-1.5 text-xs font-bold whitespace-nowrap bg-f1 text-white hover:bg-[rgb(255_30_20)]">Go live</button>
               )}
@@ -731,7 +745,7 @@ const HlsPlayer = ({ src, live }) => {
                   )}
                 </div>
               )}
-              <ControlButton onClick={() => setShowStats(v => !v)} title="Stream stats" active={showStats}><BarChart3 className="w-5 h-5" /></ControlButton>
+              <ControlButton className="hidden sm:grid" onClick={() => setShowStats(v => !v)} title="Stream stats" active={showStats}><BarChart3 className="w-5 h-5" /></ControlButton>
               {document.pictureInPictureEnabled && (
                 <ControlButton onClick={togglePip} title="Picture in picture"><PictureInPicture2 className="w-5 h-5" /></ControlButton>
               )}
@@ -812,26 +826,29 @@ export const PlayerModal = memo(({ stream, channels, liveSession, onSwitch, onCl
   const split = canSplit && showTelemetry;
   const switchable = isLiveStream && channels.length > 1;
   const kind = stream.type === 'youtube' ? 'Highlights' : isLiveStream ? 'Live' : 'Replay';
+  const desktop = useMedia(DESKTOP);
+  const landscapePhone = useMedia(LANDSCAPE_PHONE);
+  const sideBySide = desktop || landscapePhone;
 
   return (
     <motion.div className="fixed inset-0 z-[70] bg-black flex flex-col" role="dialog" aria-modal="true" aria-label={`${kind}: ${stream.title}`}
       initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 md:px-5 h-14 md:h-16 border-b border-graphite/70 bg-carbon shrink-0">
+      <div className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 md:px-5 ${landscapePhone ? 'h-11' : 'h-14 md:h-16'} border-b border-graphite/70 bg-carbon shrink-0`}>
         <button onClick={onClose} title="Close (Esc)" aria-label="Close player"
           className="p-2 -ml-1 rounded-full text-steel hover:text-chalk hover:bg-raised transition-colors">
           <X className="w-5 h-5" />
         </button>
-        <span className={`slant shrink-0 flex items-center gap-2 px-4 py-1 text-xs font-bold ${isLiveStream ? 'bg-f1 text-white' : 'bg-raised text-chalk'}`}>
+        <span className={`slant shrink-0 hidden sm:flex items-center gap-2 px-4 py-1 text-xs font-bold ${isLiveStream ? 'bg-f1 text-white' : 'bg-raised text-chalk'}`}>
           {isLiveStream && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
           {kind}
         </span>
 
         {/* Feed title + switcher */}
-        <div className="relative min-w-0">
+        <div className="relative flex-1 min-w-0">
           <button onClick={() => switchable && setMenuOpen(v => !v)} disabled={!switchable} aria-expanded={switchable ? menuOpen : undefined}
-            className={`flex items-center gap-2 min-w-0 rounded-[10px] px-2 py-1.5 transition-colors ${switchable ? 'hover:bg-raised' : 'cursor-default'}`}>
+            className={`flex items-center gap-2 min-w-0 max-w-full rounded-[10px] px-2 py-1.5 transition-colors ${switchable ? 'hover:bg-raised' : 'cursor-default'}`}>
             {stream.type !== 'youtube' && <ChannelLogo stream={stream} archive={!isLiveStream} size="sm" className="hidden sm:grid" />}
             <span className="font-bold truncate">{stream.title}</span>
             {stream.quality && <span className="hidden sm:inline text-[11px] tnum px-1.5 py-0.5 rounded-chip border border-graphite text-steel shrink-0">{stream.quality}</span>}
@@ -843,7 +860,7 @@ export const PlayerModal = memo(({ stream, channels, liveSession, onSwitch, onCl
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <motion.div initial={{ opacity: 0, y: -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.98 }}
                   transition={{ duration: 0.18 }}
-                  className="absolute left-0 top-full mt-2 z-20 w-96 max-w-[90vw] max-h-[60vh] overflow-y-auto rounded-card bg-carbon border border-graphite shadow-2xl p-1.5 origin-top-left">
+                  className="fixed inset-x-2 top-[3.75rem] sm:absolute sm:inset-x-auto sm:left-0 sm:top-full sm:mt-2 z-20 sm:w-96 max-h-[70vh] sm:max-h-[60vh] overflow-y-auto overscroll-contain rounded-card bg-carbon border border-graphite shadow-2xl p-1.5 origin-top sm:origin-top-left">
                   <div className="px-3 pt-1.5 pb-2 text-xs text-steel font-semibold">Switch feed</div>
                   {channels.map(c => (
                     <button key={c.key}
@@ -862,7 +879,7 @@ export const PlayerModal = memo(({ stream, channels, liveSession, onSwitch, onCl
           </AnimatePresence>
         </div>
 
-        <div className="ml-auto flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           {canSplit && (
             <>
               <span className="hidden md:flex items-center gap-1.5 text-sm text-steel">
@@ -880,9 +897,9 @@ export const PlayerModal = memo(({ stream, channels, liveSession, onSwitch, onCl
       </div>
 
       {/* Body: 70:30 split during a live session, centred feed otherwise */}
-      <div className={`flex-1 min-h-0 flex ${split ? 'flex-col lg:flex-row overflow-y-auto lg:overflow-hidden' : 'items-center justify-center md:p-8'}`}>
+      <div className={`flex-1 min-h-0 flex ${split ? (sideBySide ? 'flex-row' : 'flex-col') : 'items-center justify-center md:p-8'}`}>
         <div className={split
-          ? 'w-full lg:w-[70%] aspect-video lg:aspect-auto lg:h-full bg-black shrink-0'
+          ? (sideBySide ? `${desktop ? 'w-[70%]' : 'w-[60%]'} h-full bg-black shrink-0` : 'w-full aspect-video bg-black shrink-0')
           : 'w-full max-w-6xl max-h-full aspect-video bg-black md:rounded-stage overflow-hidden md:border border-graphite/60'}>
           <VideoPlayer key={stream.url} src={stream.url} type={stream.type} />
         </div>
@@ -890,8 +907,8 @@ export const PlayerModal = memo(({ stream, channels, liveSession, onSwitch, onCl
           {split && (
             <motion.aside key="telemetry" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }}
               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="w-full lg:w-[30%] h-[75vh] lg:h-full shrink-0 border-t lg:border-t-0 lg:border-l border-graphite/70 bg-carbon overflow-hidden">
-              <LiveTelemetry compact />
+              className={`${sideBySide ? `${desktop ? 'w-[30%]' : 'w-[40%]'} h-full border-l` : 'w-full flex-1 min-h-0 border-t'} border-graphite/70 bg-carbon overflow-hidden`}>
+              <LiveTelemetry compact tabbed={!desktop} />
             </motion.aside>
           )}
         </AnimatePresence>

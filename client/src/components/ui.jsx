@@ -81,3 +81,8 @@ export const SectionHeading = ({ title, aside, id }) => (
 );
 
 export const Skeleton = ({ className = '' }) => <div className={`rounded-card bg-raised/60 animate-pulse ${className}`} />;
+
+// Marks numbers that come from OpenF1 before the official record has them
+export const ProvisionalBadge = ({ title = 'From OpenF1 live results; the official record (Jolpica) has not published this session yet' }) => (
+  <span title={title} className="px-2 py-0.5 rounded-chip bg-caution/15 text-caution text-[11px] font-bold">Provisional</span>
+);

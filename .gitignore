@@ -78,3 +78,6 @@ IPTV*Codes*.txt
 # Proprietary fonts (see client/src/assets/fonts/README.md)
 client/src/assets/fonts/*
 !client/src/assets/fonts/README.md
+
+# Server-side outline cache
+server/cache/

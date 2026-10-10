@@ -8,6 +8,7 @@ import { FeedList } from '../components/Feeds';
 import { useFeedHealth } from '../lib/feeds';
 import { streamForChannel } from '../lib/streams';
 import { ease } from '../lib/motion';
+import { DESKTOP, useMedia } from '../lib/useMedia';
 
 const Feeds = ({ channels, onPlay }) => {
   // Feeds are only checked on request here: opening the tab shouldn't
@@ -28,6 +29,7 @@ const Feeds = ({ channels, onPlay }) => {
 
 const LiveView = ({ hero, liveSession, channels, onPlay }) => {
   const next = hero?.state.next;
+  const desktop = useMedia(DESKTOP);
   return (
     <div className="space-y-5 lg:space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -44,8 +46,8 @@ const LiveView = ({ hero, liveSession, channels, onPlay }) => {
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 lg:gap-6 items-start">
         {liveSession ? (
-          <section className="card overflow-hidden" aria-label="Live timing">
-            <LiveTelemetry />
+          <section className={`card overflow-hidden ${desktop ? '' : 'h-[72svh] min-h-[420px]'}`} aria-label="Live timing">
+            {desktop ? <LiveTelemetry /> : <LiveTelemetry compact tabbed />}
           </section>
         ) : (
           <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease }}

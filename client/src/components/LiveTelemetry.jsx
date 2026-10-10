@@ -2,6 +2,7 @@ import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Activity, CloudRain, Flag, Gauge, Radio, Satellite, Thermometer, Timer, Tag } from 'lucide-react';
 import { apiBase, feedStatusLabel } from '../lib/schedule';
+import { useCircuit } from '../lib/circuitData';
 
 // Live session visualisation inspired by f1-race-replay: cars on a rendered
 // track, leaderboard with tyres, and telemetry for the selected driver - fed by
@@ -61,20 +62,6 @@ function useLiveStream() {
   }, []);
 
   return { state, connected, positionsRef, receivedAtRef };
-}
-
-function useCircuit(circuitKey, year) {
-  const [circuit, setCircuit] = useState(null);
-  useEffect(() => {
-    if (!circuitKey) return;
-    let cancelled = false;
-    fetch(`${apiBase()}/api/live/circuit?key=${circuitKey}&year=${year}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(data => !cancelled && setCircuit(data))
-      .catch(() => !cancelled && setCircuit(null));
-    return () => { cancelled = true; };
-  }, [circuitKey, year]);
-  return circuit;
 }
 
 // --- Track geometry ---
@@ -463,10 +450,11 @@ const StatusChip = ({ status }) => status && (
   </span>
 );
 
-const LiveTelemetry = ({ compact = false }) => {
+const LiveTelemetry = ({ compact = false, tabbed = false }) => {
   const { state, connected, positionsRef, receivedAtRef } = useLiveStream();
   const [picked, setSelected] = useState(null);
   const [showLabels, setShowLabels] = useState(true);
+  const [tab, setTab] = useState('timing');
 
   const session = state?.session;
   const year = session?.startUtc ? new Date(session.startUtc).getUTCFullYear() : 2026;
@@ -497,20 +485,64 @@ const LiveTelemetry = ({ compact = false }) => {
   );
   const replayBadge = state.source === 'replay' && <span className="px-2 py-0.5 rounded-full bg-fastest/20 text-fastest font-bold text-[11px]">Replay</span>;
 
+  const statusBar = (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-graphite/70 overflow-x-auto whitespace-nowrap [scrollbar-width:none] shrink-0">
+      <span className="font-bold">{session?.name}</span>
+      <StatusChip status={status} />
+      <SessionClock state={state} isRace={isRace} />
+      {state.weather && <span className="text-steel tnum">{state.weather.air}° / {state.weather.track}°</span>}
+      {replayBadge}
+      <span className={`ml-auto w-2 h-2 shrink-0 rounded-full ${connected ? 'bg-pb' : 'bg-caution'}`} title={connected ? 'Connected' : 'Reconnecting'} />
+    </div>
+  );
+  const raceControl = latestMessage && (
+    <div className="px-3 py-1.5 border-b border-graphite/70 bg-black/40 text-[11px] truncate shrink-0" title={latestMessage.Message}>
+      <span className="text-f1 font-bold mr-1.5">Race control</span>
+      <span className="text-chalk/85">{latestMessage.Message}</span>
+    </div>
+  );
+
+  // Phones: one view at a time under the video, picked with tabs. Picking a
+  // driver on the timing tab keeps you there; their data is on Driver.
+  if (compact && tabbed) {
+    const TABS = [['timing', 'Timing'], ['track', 'Track'], ['driver', selectedDriver?.tla || 'Driver']];
+    return (
+      <div className="flex flex-col h-full min-h-0 text-xs">
+        {statusBar}
+        <div role="tablist" className="grid grid-cols-3 gap-1 p-1.5 border-b border-graphite/70 shrink-0">
+          {TABS.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+              className={`relative py-2 rounded-full text-xs font-bold transition-colors ${tab === id ? 'text-white' : 'text-steel'}`}>
+              {tab === id && <motion.span layoutId="telemetry-tab" className="absolute inset-0 rounded-full bg-f1" transition={{ type: 'spring', stiffness: 420, damping: 38 }} />}
+              <span className="relative">{label}</span>
+            </button>
+          ))}
+        </div>
+        {tab === 'timing' && (
+          <>
+            {raceControl}
+            <div className="flex-1 min-h-0">
+              <Leaderboard drivers={drivers} selected={selected} onSelect={setSelected} isRace={isRaceLike} />
+            </div>
+          </>
+        )}
+        {tab === 'track' && <div className="relative flex-1 min-h-0">{trackMap}</div>}
+        {tab === 'driver' && (
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <DriverTelemetry driver={selectedDriver} compact />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Narrow side panel next to the video player
   if (compact) {
     return (
       <div className="flex flex-col h-full min-h-0 text-xs">
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 border-b border-graphite/70">
-          <span className="font-bold">{session?.name}</span>
-          <StatusChip status={status} />
-          <SessionClock state={state} isRace={isRace} />
-          {state.weather && <span className="text-steel tnum">{state.weather.air}° / {state.weather.track}°</span>}
-          <span className={`ml-auto w-2 h-2 rounded-full ${connected ? 'bg-pb' : 'bg-caution'}`} title={connected ? 'Connected' : 'Reconnecting'} />
-        </div>
+        {statusBar}
         <div className="relative h-[32vh] min-h-[180px] shrink-0 border-b border-graphite/70">
           {trackMap}
-          {replayBadge && <span className="absolute top-2 left-2">{replayBadge}</span>}
         </div>
         {latestMessage && (
           <div className="px-3 py-1.5 border-b border-graphite/70 bg-black/40 text-[11px] truncate shrink-0" title={latestMessage.Message}>

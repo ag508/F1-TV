@@ -403,6 +403,31 @@ app.get('/api/live/stream', (req, res) => {
 // brand-new circuits fall back to tracing a lap from OpenF1 location data.
 const circuitCache = new Map();   // key -> { circuit, expires } (circuit null = not available)
 const circuitPending = new Map(); // key -> Promise, so parallel requests share one lookup
+
+// Found outlines are also kept on disk: a venue's layout rarely changes, so a
+// restart doesn't need MultiViewer/OpenF1 again. Entries older than 30 days
+// are refetched.
+const CIRCUIT_DISK_TTL = 30 * 24 * 60 * 60 * 1000;
+const circuitCacheFile = path.join(process.env.CACHE_DIR || path.join(__dirname, 'cache'), 'circuits.json');
+try {
+  const saved = JSON.parse(require('fs').readFileSync(circuitCacheFile, 'utf8'));
+  for (const [key, { circuit, savedAt }] of Object.entries(saved)) {
+    if (circuit && Date.now() - savedAt < CIRCUIT_DISK_TTL) circuitCache.set(key, { circuit, expires: savedAt + CIRCUIT_DISK_TTL, savedAt });
+  }
+  console.log(`[Circuit] ${circuitCache.size} outlines loaded from ${circuitCacheFile}`);
+} catch { /* no cache yet */ }
+let circuitSaveTimer = null;
+function saveCircuitCache() {
+  clearTimeout(circuitSaveTimer);
+  circuitSaveTimer = setTimeout(() => {
+    const out = {};
+    for (const [key, entry] of circuitCache) if (entry.circuit) out[key] = { circuit: entry.circuit, savedAt: entry.savedAt };
+    const fsp = require('fs');
+    fsp.promises.mkdir(path.dirname(circuitCacheFile), { recursive: true })
+      .then(() => fsp.promises.writeFile(circuitCacheFile, JSON.stringify(out)))
+      .catch(err => console.warn('[Circuit] Could not save outline cache:', err.message));
+  }, 2000);
+}
 const CIRCUIT_MISS_TTL = 6 * 60 * 60 * 1000;  // no outline anywhere: ask again in 6 h
 const CIRCUIT_ERROR_TTL = 5 * 60 * 1000;      // lookup failed (network, rate limit): retry in 5 min
 
@@ -455,19 +480,24 @@ app.get('/api/live/circuit', async (req, res) => {
   const cacheKey = `${circuitKey}-${year}`;
   const cached = circuitCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    return cached.circuit ? res.json(cached.circuit) : res.status(404).json({ error: 'Circuit layout not available' });
+    if (!cached.circuit) return res.status(404).json({ error: 'Circuit layout not available' });
+    res.set('Cache-Control', 'public, max-age=86400');
+    return res.json(cached.circuit);
   }
 
   if (!circuitPending.has(cacheKey)) {
     circuitPending.set(cacheKey, loadCircuit(circuitKey, year)
       .then(({ circuit, failed }) => {
-        circuitCache.set(cacheKey, { circuit, expires: circuit ? Infinity : Date.now() + (failed ? CIRCUIT_ERROR_TTL : CIRCUIT_MISS_TTL) });
+        const now = Date.now();
+        circuitCache.set(cacheKey, { circuit, savedAt: now, expires: circuit ? now + CIRCUIT_DISK_TTL : now + (failed ? CIRCUIT_ERROR_TTL : CIRCUIT_MISS_TTL) });
+        if (circuit) saveCircuitCache();
         return circuit;
       })
       .finally(() => circuitPending.delete(cacheKey)));
   }
   const circuit = await circuitPending.get(cacheKey);
   if (!circuit) return res.status(404).json({ error: 'Circuit layout not available' });
+  res.set('Cache-Control', 'public, max-age=86400');
   res.json(circuit);
 });
 

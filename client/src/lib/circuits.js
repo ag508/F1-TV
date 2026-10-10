@@ -60,10 +60,33 @@ export const circuitImage = (circuitId) => {
   return CIRCUIT_IMAGES[id] || CIRCUIT_IMAGES[id.replace(/[-\s]/g, '_')] || CIRCUIT_IMAGES[id.replace(/_/g, '-')] || null;
 };
 
-// OpenF1 numbers circuits (circuit_key) the way F1 live timing and MultiViewer
-// do; Jolpica doesn't. Match a calendar race to its OpenF1 sessions by date.
+// F1's own circuit numbers (live timing, MultiViewer and OpenF1 all use them).
+// They never change for a venue, so a fixed table is the reliable way to find
+// a race's outline; OpenF1's session list is only the fallback for a venue
+// that isn't listed here yet.
+const CIRCUIT_KEYS = {
+  albert_park: 10, shanghai: 49, suzuka: 46, bahrain: 63, jeddah: 149, miami: 151,
+  villeneuve: 23, monaco: 22, catalunya: 15, red_bull_ring: 19, silverstone: 2, spa: 7,
+  hungaroring: 4, zandvoort: 55, monza: 39, madring: 153, baku: 144, sepang: 12,
+  marina_bay: 61, americas: 9, rodriguez: 65, interlagos: 14, vegas: 152, losail: 150,
+  yas_marina: 70,
+};
+// Sportstimes calendar slugs (the fallback calendar) for the same venues
+const SLUG_KEYS = {
+  'australian-grand-prix': 10, 'chinese-grand-prix': 49, 'japanese-grand-prix': 46, 'bahrain-grand-prix': 63,
+  'saudi-arabia-grand-prix': 149, 'miami-grand-prix': 151, 'canadian-grand-prix': 23, 'monaco-grand-prix': 22,
+  'barcelona-catalunya-grand-prix': 15, 'austrian-grand-prix': 19, 'british-grand-prix': 2, 'belgian-grand-prix': 7,
+  'hungarian-grand-prix': 4, 'dutch-grand-prix': 55, 'italian-grand-prix': 39, 'spanish-grand-prix': 153,
+  'azerbaijan-grand-prix': 144, 'singapore-grand-prix': 61, 'us-grand-prix': 9, 'mexican-grand-prix': 65,
+  'brazilian-grand-prix': 14, 'las-vegas-grand-prix': 152, 'qatar-grand-prix': 150, 'abu-dhabi-grand-prix': 70,
+};
+
 export const circuitKeyFor = (race, openf1Sessions) => {
-  if (!race || !openf1Sessions?.length) return null;
+  if (!race) return null;
+  const id = race.Circuit?.circuitId;
+  const known = CIRCUIT_KEYS[id] || SLUG_KEYS[id];
+  if (known) return known;
+  if (!openf1Sessions?.length) return null;
   const raceDay = new Date(`${race.date}T${race.time || '12:00:00Z'}`).getTime();
   const match = openf1Sessions.find(s => Math.abs(new Date(s.date_start).getTime() - raceDay) < 4 * 864e5);
   return match?.circuit_key ?? null;

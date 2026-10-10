@@ -61,7 +61,7 @@ const PointsChart = ({ series, rounds }) => {
           </g>
         ))}
         {rounds.map((r, i) => (n <= 12 || i % 2 === 0 || i === n - 1) && (
-          <text key={r} x={x(i)} y={height - 8} textAnchor="middle" className="tnum" fontSize="11" fill="rgb(148 148 152)">R{r}</text>
+          <text key={r.axis} x={x(i)} y={height - 8} textAnchor={i === n - 1 && n > 1 ? 'end' : 'middle'} className="tnum" fontSize="11" fill={r.provisional ? 'rgb(255 214 10)' : 'rgb(148 148 152)'}>{r.axis}</text>
         ))}
 
         {hover != null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={height - PAD.bottom} stroke="rgb(247 244 241 / 0.35)" strokeWidth="1" />}
@@ -86,7 +86,7 @@ const PointsChart = ({ series, rounds }) => {
       {hovered && (
         <div className="pointer-events-none absolute top-2 z-10 rounded-[10px] bg-night/95 border border-graphite px-3 py-2 text-xs shadow-xl"
           style={{ left: Math.min(width - 150, Math.max(0, x(hover) + 12)) }}>
-          <div className="font-bold mb-1">After round {rounds[hover]}</div>
+          <div className="font-bold mb-1">After {rounds[hover].title}</div>
           {hovered.map(({ s, v }) => (
             <div key={s.id} className="flex items-center gap-2">
               <span className="w-3 h-0.5" style={{ backgroundColor: s.colour }} />

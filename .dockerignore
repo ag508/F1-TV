@@ -63,3 +63,6 @@ IPTV*Codes*.txt
 /package-lock.json
 
 /verify_api.js
+
+# Runtime outline cache
+server/cache

@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import PointsChart from '../components/PointsChart';
-import { AnimatedNumber, Avatar, Segmented, Skeleton } from '../components/ui';
-import { colourFor, useConstructorStandings, useDriverStandings, useGrid, useSeasonResults } from '../lib/data';
+import { AnimatedNumber, Avatar, ProvisionalBadge, Segmented, Skeleton } from '../components/ui';
+import { colourFor, useGrid, useSeasonResults, useStandings } from '../lib/data';
 import { ease, pageVariants } from '../lib/motion';
 
 const CLASSIFIED = /^(Finished|Lapped|\+\d+ Laps?)$/;
@@ -78,14 +78,16 @@ const DriversTable = ({ list, grid, facts, leader }) => (
   </div>
 );
 
-const ConstructorsTable = ({ list, drivers, grid, standings }) => {
+const ConstructorsTable = ({ list, grid, standings }) => {
   const max = Number(list[0]?.points) || 1;
   return (
     <div className="card overflow-hidden">
       <ol>
         {list.map((row, i) => {
           const id = row.Constructor.constructorId;
-          const pair = drivers.filter(d => d.constructorId === id).sort((a, b) => b.cumulative.at(-1) - a.cumulative.at(-1));
+          const pair = standings.filter(s => s.Constructors[0]?.constructorId === id)
+            .map(s => ({ id: s.Driver.driverId, code: s.Driver.code, name: `${s.Driver.givenName} ${s.Driver.familyName}`, points: Number(s.points) }))
+            .sort((a, b) => b.points - a.points);
           const someDriver = standings.find(s => s.Constructors[0]?.constructorId === id);
           const colour = colourFor(grid, someDriver?.Driver.code, id);
           return (
@@ -99,13 +101,13 @@ const ConstructorsTable = ({ list, drivers, grid, standings }) => {
               <span className="col-span-3 sm:col-span-1 row-start-2 sm:row-start-auto mt-3 sm:mt-0">
                 <span className="flex h-2.5 rounded-full bg-raised overflow-hidden" style={{ width: `${(Number(row.points) / max) * 100}%` }}>
                   {pair.map((d, j) => (
-                    <motion.span key={d.id} className="h-full first:rounded-l-full last:rounded-r-full" title={`${d.name}: ${d.cumulative.at(-1)}`}
-                      style={{ width: `${(d.cumulative.at(-1) / Math.max(1, Number(row.points))) * 100}%`, backgroundColor: colour, opacity: j ? 0.5 : 1, marginLeft: j ? 2 : 0, transformOrigin: 'left' }}
+                    <motion.span key={d.id} className="h-full first:rounded-l-full last:rounded-r-full" title={`${d.name}: ${d.points}`}
+                      style={{ width: `${(d.points / Math.max(1, Number(row.points))) * 100}%`, backgroundColor: colour, opacity: j ? 0.5 : 1, marginLeft: j ? 2 : 0, transformOrigin: 'left' }}
                       initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }} transition={{ duration: 0.8, ease, delay: i * 0.04 }} />
                   ))}
                 </span>
                 <span className="flex gap-4 mt-1.5 text-[11px] text-steel tnum">
-                  {pair.map((d, j) => <span key={d.id} className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: colour, opacity: j ? 0.5 : 1 }} />{d.code} {d.cumulative.at(-1)}</span>)}
+                  {pair.map((d, j) => <span key={d.id} className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ backgroundColor: colour, opacity: j ? 0.5 : 1 }} />{d.code} {d.points}</span>)}
                 </span>
               </span>
               <span className="display text-xl text-right tnum row-start-1 col-start-3 sm:col-start-auto"><AnimatedNumber value={row.points} /></span>
@@ -120,14 +122,15 @@ const ConstructorsTable = ({ list, drivers, grid, standings }) => {
 const StandingsView = ({ season }) => {
   const [tab, setTab] = useState('drivers');
   const [chartCount, setChartCount] = useState(5);
-  const drivers = useDriverStandings();
-  const constructors = useConstructorStandings();
+  const standings = useStandings(season);
   const results = useSeasonResults(season);
+  const merged = standings.data;
+  const provisional = merged?.provisional;
   const { data: grid } = useGrid();
   const facts = useDriverFacts(results.data?.rounds);
 
   const series = useMemo(() => {
-    const list = drivers.data?.list || [];
+    const list = merged?.drivers || [];
     const all = results.data?.drivers || [];
     const seenTeams = new Set();
     return list.slice(0, chartCount).map(row => {
@@ -135,17 +138,30 @@ const StandingsView = ({ season }) => {
       if (!d) return null;
       const dashed = seenTeams.has(d.constructorId);
       seenTeams.add(d.constructorId);
-      return { id: d.id, code: d.code, values: d.cumulative, dashed, colour: colourFor(grid, d.code, d.constructorId) };
+      // A provisional session (in OpenF1, not yet in Jolpica) adds one column at the end
+      const values = provisional ? [...d.cumulative, Number(row.points)] : d.cumulative;
+      return { id: d.id, code: d.code, values, dashed, colour: colourFor(grid, d.code, d.constructorId) };
     }).filter(Boolean);
-  }, [drivers.data, results.data, grid, chartCount]);
+  }, [merged, provisional, results.data, grid, chartCount]);
 
-  const round = drivers.data?.round;
+  const chartRounds = useMemo(() => {
+    const list = (results.data?.rounds || []).map(r => ({ axis: `R${r.round}`, title: `round ${r.round}, ${r.raceName}` }));
+    if (provisional) list.push({ axis: provisional.session.name === 'Sprint' ? 'Sprint' : 'Latest', title: `${provisional.label} (provisional)`, provisional: true });
+    return list;
+  }, [results.data, provisional]);
+
+  const round = merged?.round;
   return (
     <div className="space-y-5 lg:space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="display text-3xl sm:text-4xl leading-none">Standings</h1>
-          {round && <p className="text-steel text-sm mt-2">{season} season, after round {round}</p>}
+          {round && (
+            <p className="flex flex-wrap items-center gap-2 text-steel text-sm mt-2">
+              {season} season, after {provisional ? provisional.label : `round ${round}`}
+              {provisional && <ProvisionalBadge />}
+            </p>
+          )}
         </div>
         <Segmented id="standings" value={tab} onChange={setTab}
           options={[{ value: 'drivers', label: 'Drivers' }, { value: 'constructors', label: 'Constructors' }]} />
@@ -173,17 +189,17 @@ const StandingsView = ({ season }) => {
                       </li>
                     ))}
                   </ul>
-                  <div className="overflow-hidden"><PointsChart series={series} rounds={results.data.rounds.map(r => r.round)} /></div>
+                  <div className="overflow-hidden"><PointsChart series={series} rounds={chartRounds} /></div>
                 </>
               ) : <Skeleton className="h-[300px]" />}
             </section>
-            {drivers.data ? <DriversTable list={drivers.data.list} grid={grid} facts={facts} leader={Number(drivers.data.list[0]?.points)} />
+            {merged ? <DriversTable list={merged.drivers} grid={grid} facts={facts} leader={Number(merged.drivers[0]?.points)} />
               : <Skeleton className="h-[600px]" />}
           </motion.div>
         ) : (
           <motion.div key="constructors" variants={pageVariants} initial="initial" animate="animate" exit="exit">
-            {constructors.data && drivers.data
-              ? <ConstructorsTable list={constructors.data.list} drivers={results.data?.drivers || []} grid={grid} standings={drivers.data.list} />
+            {merged?.constructors.length
+              ? <ConstructorsTable list={merged.constructors} grid={grid} standings={merged.drivers} />
               : <Skeleton className="h-[600px]" />}
           </motion.div>
         )}
