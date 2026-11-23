@@ -230,7 +230,19 @@ async function resolveSource(channel, { index = 0, fresh = false } = {}) {
 // true = media flows, false = upstream rejects it, null = not checkable
 // (master playlist / no segments).
 async function firstSegmentOk(stream, playlist, playlistUrl) {
-  if (playlist.includes('#EXT-X-STREAM-INF')) return null;
+  // Master playlist: check its first variant instead
+  if (playlist.includes('#EXT-X-STREAM-INF')) {
+    const variant = playlist.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (!variant) return null;
+    try {
+      const url = new URL(variant, playlistUrl).href;
+      const res = await axios.get(url, { timeout: 12000, maxRedirects: 5, headers: { 'User-Agent': UA, ...(stream.headers || {}) } });
+      playlist = String(res.data || '');
+      playlistUrl = res.request?.res?.responseUrl || url;
+    } catch { return false; }
+  }
+  // Sample-encrypted (SAMPLE-AES / CENC) media needs DRM: not playable here
+  if (/#EXT-X-KEY:[^\n]*METHOD=SAMPLE-AES/i.test(playlist)) return 'encrypted';
   const uris = playlist.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   if (!uris.length) return null;
   let segUrl;
@@ -309,6 +321,9 @@ async function checkStream(stream, probeFn) {
     // A playlist can load while its origin rejects the media itself (seen
     // with addon proxies: playlist 200, every segment 502). Check one segment.
     const segOk = await firstSegmentOk(stream, text, res.request?.res?.responseUrl || stream.url);
+    if (segOk === 'encrypted') {
+      return { status: 'DEGRADED', reason: 'Stream is DRM-encrypted (SAMPLE-AES), not playable in a browser' };
+    }
     if (segOk === false) {
       return { status: 'DEGRADED', reason: 'Playlist loads but the upstream rejects the video segments' };
     }

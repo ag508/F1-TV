@@ -24,8 +24,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const direct = require('./direct');
 
-const ROOT = path.join(os.tmpdir(), 'f1tv-hls');
+const ROOT_BASE = path.join(os.tmpdir(), 'f1tv-hls');
+const ROOT = path.join(ROOT_BASE, String(process.pid));
 const SEGMENT_SECONDS = 2;
 const DVR_SECONDS = Number(process.env.HLS_DVR_SECONDS) || 600;
 const IDLE_TIMEOUT_MS = 60 * 1000;
@@ -140,20 +142,24 @@ function probeSource(url, timeoutMs = 12000, headers = null) {
       '-show_entries', 'stream=codec_type,codec_name,width,height,avg_frame_rate', '-of', 'json', url
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
     let out = '';
-    const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
+    let done = false;
+    const finish = (value) => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
+    // The timeout settles the probe itself: waiting for 'close' after a kill
+    // can hang forever when a wrapper process (e.g. a package-manager shim)
+    // is killed but its child keeps the stdout pipe open.
+    const timer = setTimeout(() => { proc.kill('SIGKILL'); proc.stdout.destroy(); finish(null); }, timeoutMs);
     proc.stdout.on('data', d => (out += d));
-    proc.on('error', () => { clearTimeout(timer); resolve(null); });
+    proc.on('error', () => finish(null));
     proc.on('close', () => {
-      clearTimeout(timer);
       try {
         const streams = JSON.parse(out).streams || [];
         const v = streams.find(s => s.codec_type === 'video');
         const a = streams.find(s => s.codec_type === 'audio');
-        if (!v) return resolve(null);
+        if (!v) return finish(null);
         const [num, den] = String(v.avg_frame_rate || '0/1').split('/').map(Number);
         const fps = den ? num / den : 0;
-        resolve({ vcodec: v.codec_name, height: v.height || 0, acodec: a?.codec_name, fps: fps > 0 && fps < 121 ? fps : null });
-      } catch { resolve(null); }
+        finish({ vcodec: v.codec_name, height: v.height || 0, acodec: a?.codec_name, fps: fps > 0 && fps < 121 ? fps : null });
+      } catch { finish(null); }
     });
   });
 }
@@ -284,7 +290,16 @@ function removeDir(dir) {
   }
 }
 
-removeDir(ROOT);
+// Each server process works in its own ROOT/<pid> directory, so two instances
+// on one host - or an FFmpeg left behind by a crashed one - can never write
+// into or delete each other's session files. On start, clear our own
+// directory (a restarted container reuses PID 1) and those of dead processes.
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+fs.mkdirSync(ROOT_BASE, { recursive: true });
+for (const name of fs.readdirSync(ROOT_BASE)) {
+  const pid = /^\d+$/.test(name) ? Number(name) : null;
+  if (pid === null || pid === process.pid || !pidAlive(pid)) removeDir(path.join(ROOT_BASE, name));
+}
 fs.mkdirSync(ROOT, { recursive: true });
 
 const sessions = new Map(); // id -> HlsSession
@@ -307,7 +322,7 @@ class HlsSession {
     this.restarts = 0;
     this.failures = 0;
     this.resolveFailures = 0;
-    this.sourceIndex = 0;                      // which addon stream alternative to use
+    this.sourceIndex = opts.startIndex || 0;   // which addon stream alternative to use
     this.needFreshSource = false;
     this.lastProbe = null;                     // last successful source probe
     this.failed = new Set();  // attempt ids that failed fast for encoder/GPU reasons
@@ -512,14 +527,14 @@ function sessionId(key) {
   return crypto.createHash('sha1').update(key).digest('hex').slice(0, 16);
 }
 
-function getSession({ server, username, password, channelId, profile, sessionKey, key, resolveSource }) {
+function getSession({ server, username, password, channelId, profile, sessionKey, key, resolveSource, startIndex }) {
   const id = sessionKey
     ? sessionId(`${sessionKey}|${profile}`)
     : sessionId(`${server}|${username}|${channelId}|${profile}`);
   let session = sessions.get(id);
   if (!session) {
     const sourceUrl = resolveSource ? null : `${server}/live/${username}/${password}/${channelId}.ts`;
-    session = new HlsSession(id, sourceUrl, profile, { key, resolveSource });
+    session = new HlsSession(id, sourceUrl, profile, { key, resolveSource, startIndex });
     session.createdAt = Date.now();
     sessions.set(id, session);
   }
@@ -537,6 +552,7 @@ function isChannelActive(server, username, channelId) {
 // Is the channel with this registry key currently being restreamed? Works for
 // dynamic (addon) sessions whose source URL isn't a stable IPTV address.
 function isKeyActive(key) {
+  if (direct.isKeyActive(key)) return true; // viewers on a direct (proxied) session
   for (const s of sessions.values()) {
     if (s.proc && s.key === key) return true;
   }
@@ -560,10 +576,26 @@ setInterval(() => {
 const PLAYLIST_HEADERS = {
   'Content-Type': 'application/vnd.apple.mpegurl',
   'Cache-Control': 'no-cache, no-store',
-  'Access-Control-Allow-Origin': '*'
+  'Access-Control-Allow-Origin': '*',
+  // Lets the player tune its live latency to the delivery mode
+  'Access-Control-Expose-Headers': 'X-Stream-Mode',
+  'X-Stream-Mode': 'restream',
 };
 
+// How addon (Stremio) channels are delivered:
+//   'auto'     - direct when the source codecs are browser-playable, else
+//                restream (what Stremio's own web player does)
+//   'direct'   - same as auto (incompatible codecs still have to restream)
+//   'restream' - always through FFmpeg (old behaviour)
+// Per channel: "playback" in channels.json; default: STREMIO_PLAYBACK env.
+// IPTV channels always restream: one shared upstream connection per channel
+// keeps within the providers' per-account connection limits.
+const STREMIO_PLAYBACK = (process.env.STREMIO_PLAYBACK || 'auto').toLowerCase();
+const playbackOf = (known) => (known?.playback || STREMIO_PLAYBACK).toLowerCase();
+
 function registerRoutes(app, resolveChannel = () => null) {
+  direct.registerRoutes(app, resolveChannel);
+
   // Entry playlist: /hls/:channel/index.m3u8
   //   :channel is either a registry key (credentials resolved server-side, so
   //   they never reach the browser) or, for ad-hoc/validation use, a raw
@@ -573,11 +605,22 @@ function registerRoutes(app, resolveChannel = () => null) {
     const known = resolveChannel(req.params.channel);
     const profile = known?.profile || req.query.profile || DEFAULT_PROFILE;
 
+    // Addon channels: play the source itself when the browser can decode it
+    let startIndex = 0;
+    if (known?.resolveSource && playbackOf(known) !== 'restream') {
+      const probe = (url, headers) => probeSource(url, 12000, headers);
+      const result = await direct.serveEntry(req, res, known, probe);
+      if (result.handled) return;
+      // Working but not browser-playable -> FFmpeg restream below, starting
+      // from the stream the direct check already verified
+      startIndex = result.index || 0;
+    }
+
     let session;
     if (known?.resolveSource) {
       // Dynamic source (Stremio addon): the upstream URL is resolved inside
       // the session at FFmpeg spawn time, so nothing sensitive is needed here.
-      session = getSession({ sessionKey: `dynamic:${known.key}`, key: known.key, profile, resolveSource: known.resolveSource });
+      session = getSession({ sessionKey: `dynamic:${known.key}`, key: known.key, profile, resolveSource: known.resolveSource, startIndex });
     } else {
       const server = known ? known.server : req.query.server;
       const username = known ? known.username : req.query.username;
@@ -631,4 +674,11 @@ function registerRoutes(app, resolveChannel = () => null) {
   }));
 }
 
-module.exports = { registerRoutes, isChannelActive, isKeyActive };
+// Stop every FFmpeg and remove session files (graceful shutdown)
+function stopAll() {
+  for (const s of sessions.values()) s.stop();
+  sessions.clear();
+  removeDir(ROOT);
+}
+
+module.exports = { registerRoutes, isChannelActive, isKeyActive, stopAll };

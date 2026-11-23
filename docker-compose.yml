@@ -13,6 +13,9 @@ services:
       - HLS_HWACCEL=auto            # auto | vaapi | none
       - HLS_DEFAULT_PROFILE=abr     # abr | auto | 1080p | source
       - HLS_ABR_LADDER=1080:6000,1080:4000:25,1080:3000,1080:2000:25
+      # Addon channels: play browser-playable sources directly (Stremio-style)
+      - STREMIO_PLAYBACK=auto       # auto | restream
+      - DIRECT_CACHE_MB=256         # shared segment cache for direct playback
     # Give the container the Intel GPU (UHD 630) for VAAPI / Quick Sync
     devices:
       - /dev/dri:/dev/dri

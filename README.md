@@ -309,6 +309,25 @@ docker-compose pull && docker-compose up -d
 
 ## Stream Architecture
 
+Two delivery paths, chosen per channel when playback starts. The header
+`X-Stream-Mode` on the entry playlist says which one is in use, and the
+player's stats panel shows it as "Delivery".
+
+**Direct (Stremio addon channels, browser-playable sources).** Same approach
+as Stremio's web player: the source is checked first (playlist loads, newest
+segment downloads, not SAMPLE-AES encrypted, codecs H.264 + AAC/MP3 from the
+playlist's CODECS or an ffprobe of that segment). The original HLS then plays
+in hls.js through a thin proxy (`server/direct.js`). The proxy rewrites URIs to
+opaque tokens, injects the addon's request headers, retries upstream errors,
+and serves segments from a shared cache with prefetch. A dead source rotates to
+the channel's next stream, and the player rejoins (HTTP 410 → rebuild).
+
+**Restream (IPTV, and addon sources the browser can't decode, e.g. HEVC or
+E-AC3).** One FFmpeg per channel writes rolling HLS (`server/hls.js`), shared
+by all viewers. IPTV always uses this path, so each channel needs only one
+connection to the provider's account. The video is copied when it's already
+H.264 ≤1080p; otherwise it's transcoded.
+
 ```
 Xstream IPTV (HLS with 30-60s expiring tokens)
     ↓
@@ -384,6 +403,8 @@ from the live mini-sector timing.
 - `PORT` - Server port (default: 3001)
 - `F1TV_TOKEN` - Optional F1 TV subscription token, enables GPS positions + car telemetry
 - `STREMIO_TIMEOUT` - Timeout (ms) for Stremio addon stream resolution (default 25000)
+- `STREMIO_PLAYBACK` - How addon channels are delivered: `auto` (default; play the source HLS directly when the browser can decode it, else restream) or `restream` (always FFmpeg). Per channel: `"playback"` in channels.json
+- `DIRECT_CACHE_MB` - Shared in-memory segment cache for direct playback (default 256)
 - `LIVE_TIMING_DISABLED=1` - Don't connect to F1 live timing
 - `LIVE_REPLAY` - Replay an archived session through the live pipeline for testing, e.g. `2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/` (see `https://livetiming.formula1.com/static/2026/Index.json`)
 - `LIVE_REPLAY_START` - Offset into the replay (`HH:MM:SS`, default: just before the start)

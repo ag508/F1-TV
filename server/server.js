@@ -126,7 +126,9 @@ function probeStream(url, timeoutMs = 15000, headers = null, { reportAudioOnly =
       '-of', 'json', url
     ]);
     let out = '';
-    const timer = setTimeout(() => proc.kill('SIGKILL'), timeoutMs);
+    // Settle on timeout directly: 'close' may never fire if a wrapper process
+    // is killed while its child still holds the stdout pipe open.
+    const timer = setTimeout(() => { proc.kill('SIGKILL'); proc.stdout.destroy(); resolve(null); }, timeoutMs);
     proc.stdout.on('data', d => (out += d));
     proc.on('error', () => { clearTimeout(timer); resolve(null); });
     proc.on('close', () => {
@@ -749,6 +751,18 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🏎️  F1-TV Server running on port ${PORT}`);
 });
+
+// Graceful shutdown. In Docker this process is PID 1, which gets no default
+// SIGTERM handling: without this, `docker stop` waits 10 s and SIGKILLs,
+// leaving FFmpeg mid-write. Stop the restreams, then exit.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    console.log(`[Server] ${signal} received, stopping streams`);
+    hls.stopAll();
+    httpServer.close();
+    setTimeout(() => process.exit(0), 500).unref();
+  });
+}

@@ -255,7 +255,20 @@ const HlsPlayer = ({ src, live }) => {
         testBandwidth: true,
         manifestLoadPolicy: HLS_LOAD_POLICY(30000, 30000, 12),
         playlistLoadPolicy: HLS_LOAD_POLICY(15000, 20000, 12),
-        fragLoadPolicy: HLS_LOAD_POLICY(15000, 60000, 8),
+        // Segment loading as in Stremio's web player (stremio-video
+        // hlsConfig): give slow segments up to 2 min and retry timeouts
+        // many times instead of failing the stream; source HLS from addons
+        // often has 10 s segments behind flaky proxies.
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10000,
+            maxLoadTimeMs: 120000,
+            timeoutRetry: { maxNumRetry: 20, retryDelayMs: 0, maxRetryDelayMs: 0 },
+            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 15000 },
+          },
+        },
+        appendErrorMaxRetry: 20,
+        nudgeMaxRetry: 20,
       });
       hlsRef.current = hls;
       if (import.meta.env.DEV) window.__hls = hls; // debugging aid in `vite dev` only
@@ -266,6 +279,18 @@ const HlsPlayer = ({ src, live }) => {
           hls.startLoad(frag ? frag.start + resume.offset : -1);
         });
       }
+      // Delivery mode from the server: 'direct' = the source HLS itself
+      // (proxied, Stremio-style; long ~10 s segments), 'restream' = our FFmpeg
+      // output (2 s segments). Sit 3 segments behind live on direct sources
+      // (hls.js / Stremio default; 5 x 10 s would add ~50 s of delay) and keep
+      // 5 x 2 s on the restream. Set before the first level loads, which is
+      // when hls.js computes the live start position from this config.
+      hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => {
+        let mode = null;
+        try { mode = data.networkDetails?.getResponseHeader?.('X-Stream-Mode') || null; } catch { /* header not exposed */ }
+        mediaInfoRef.current.mode = mode;
+        if (mode === 'direct') hls.config.liveSyncDurationCount = 3;
+      });
       hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
         setLevels(data.levels.map((l, i) => ({ index: i, height: l.height, bitrate: l.bitrate, fps: l.frameRate })));
         video.play().catch(() => { });
@@ -290,19 +315,25 @@ const HlsPlayer = ({ src, live }) => {
           hls.recoverMediaError();
           return;
         }
-        rebuild(`${data.type}: ${data.details}`);
+        // 410 Gone: the server switched this channel to another source (the
+        // old one died). Segment numbers differ there, so rejoin at live
+        // instead of resuming by sequence number.
+        const sourceSwitched = data.response?.code === 410;
+        rebuild(sourceSwitched ? 'Switching to another source' : `${data.type}: ${data.details}`, { fresh: sourceSwitched });
       });
       hls.loadSource(src);
       hls.attachMedia(video);
     };
 
-    const rebuild = (reason) => {
+    const rebuild = (reason, { fresh = false } = {}) => {
       if (disposed || rebuildTimer) return;
-      const resume = currentPosition();
+      const resume = fresh ? null : currentPosition();
       attempt += 1;
       console.warn('[Player] Rebuilding HLS player:', reason, resume);
       setStatus({ phase: 'reconnecting', attempt, detail: resume ? 'Resuming where you left off' : reason });
-      rebuildTimer = setTimeout(() => { rebuildTimer = null; create(resume); }, Math.min(1000 * 2 ** (attempt - 1), 10000));
+      // A source switch is ready immediately; other failures back off
+      const delay = fresh ? 300 : Math.min(1000 * 2 ** (attempt - 1), 10000);
+      rebuildTimer = setTimeout(() => { rebuildTimer = null; create(resume); }, delay);
     };
 
     const watchdog = setInterval(() => {
@@ -379,6 +410,7 @@ const HlsPlayer = ({ src, live }) => {
         codecs: [level?.videoCodec, level?.audioCodec].filter(Boolean).join(' / ') || mediaInfoRef.current.codecs,
         dropped: quality?.droppedVideoFrames ?? 0,
         frames: quality?.totalVideoFrames ?? 0,
+        mode: mediaInfoRef.current.mode,
       });
     }, 500);
     return () => clearInterval(id);
@@ -643,6 +675,7 @@ const HlsPlayer = ({ src, live }) => {
             <span className="font-bold text-sm">Stream stats</span>
             <button onClick={() => setShowStats(false)} aria-label="Close stream stats" className="p-1 -m-1 rounded-full text-steel hover:text-chalk"><X className="w-3.5 h-3.5" /></button>
           </div>
+          {stats.mode && <StatRow label="Delivery" value={stats.mode === 'direct' ? 'Source (direct)' : 'Server restream'} />}
           <StatRow label="Resolution" value={stats.width ? `${stats.width}×${stats.height}` : '—'} />
           {levels.length > 1 && (
             <StatRow label="Rendition" value={`${manualLevel === -1 ? 'Auto' : 'Fixed'}, ${currentLevel + 1} of ${levels.length}`} />
