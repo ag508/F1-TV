@@ -14,6 +14,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const hls = require('./hls');
 const channels = require('./channels');
+const stremio = require('./stremio');
 const { LiveTiming } = require('./livetiming');
 const app = express();
 
@@ -104,11 +105,22 @@ function isTransportStream(buf) {
   return false;
 }
 
-// ffprobe the source to report its real codec/resolution
-function probeStream(url, timeoutMs = 15000) {
+// ffprobe the source to report its real codec/resolution. `headers` are
+// custom HTTP headers required by the source (Stremio addon streams).
+// `reportAudioOnly`: resolve { audioOnly: true } (instead of null) when the
+// source answers but carries no video track, so callers can tell that apart
+// from a probe that failed.
+function probeStream(url, timeoutMs = 15000, headers = null, { reportAudioOnly = false } = {}) {
   return new Promise((resolve) => {
+    const headerArgs = [];
+    const custom = {};
+    for (const [k, v] of Object.entries(headers || {})) if (typeof v === 'string' && v) custom[k] = v;
+    headerArgs.push('-user_agent', custom['User-Agent'] || IPTV_UA);
+    delete custom['User-Agent'];
+    const headerText = Object.entries(custom).map(([k, v]) => `${k}: ${v}`).join('\r\n');
+    if (headerText) headerArgs.push('-headers', `${headerText}\r\n`);
     const proc = spawn('ffprobe', [
-      '-v', 'error', '-user_agent', IPTV_UA, '-rw_timeout', '10000000',
+      '-v', 'error', ...headerArgs, '-rw_timeout', '10000000',
       '-analyzeduration', '3000000', '-probesize', '3000000',
       '-show_entries', 'stream=codec_type,codec_name,profile,width,height,r_frame_rate',
       '-of', 'json', url
@@ -122,7 +134,7 @@ function probeStream(url, timeoutMs = 15000) {
       try {
         const streams = JSON.parse(out).streams || [];
         const v = streams.find(s => s.codec_type === 'video');
-        if (!v) return resolve(null);
+        if (!v) return resolve(reportAudioOnly && streams.some(s => s.codec_type === 'audio') ? { audioOnly: true } : null);
         const [num, den] = String(v.r_frame_rate || '0/1').split('/').map(Number);
         resolve({ codec: v.codec_name, profile: v.profile, width: v.width, height: v.height, fps: den ? Math.round(num / den) : null });
       } catch {
@@ -137,6 +149,17 @@ app.get('/api/stream-health', async (req, res) => {
   // Credentials come from the server-side registry by channel key; raw
   // server/username/password in the query are still accepted for ad-hoc checks.
   const known = req.query.key ? channels.resolve(req.query.key) : null;
+  const checkedAt = new Date().toISOString();
+
+  // Stremio addon channels: resolve the stream through the addon (the same
+  // path FFmpeg takes), instead of an IPTV account check.
+  if (known?.type === 'stremio') {
+    if (hls.isKeyActive(known.key)) {
+      return res.json({ status: 'ONLINE', reason: 'Currently streaming', checkedAt });
+    }
+    return res.json(await stremio.checkHealth(known, probe === '1' ? (url, headers) => probeStream(url, 15000, headers, { reportAudioOnly: true }) : null));
+  }
+
   const server = known ? known.server : req.query.server;
   const username = known ? known.username : req.query.username;
   const password = known ? known.password : req.query.password;
@@ -146,7 +169,6 @@ app.get('/api/stream-health', async (req, res) => {
     return res.status(400).json({ error: 'Unknown channel key, and no server/username/password supplied' });
   }
 
-  const checkedAt = new Date().toISOString();
   let userInfo;
   try {
     const response = await axios.get(`${server}/player_api.php`, {
@@ -357,7 +379,17 @@ app.get('/restream/:channelId', (req, res) => {
 });
 
 // 3b. HLS restream with DVR buffer (resilient, 1080p H.264)
-hls.registerRoutes(app, channels.resolve);
+// The resolver maps a registry key to its channel entry; Stremio addon
+// channels additionally carry a `resolveSource` callback so hls.js can fetch a
+// fresh (signed, expiring) stream URL from the addon at every FFmpeg spawn.
+hls.registerRoutes(app, (key) => {
+  const ch = channels.resolve(key);
+  if (!ch) return null;
+  if (ch.type === 'stremio') {
+    return { ...ch, resolveSource: (opts) => stremio.resolveSource(ch, opts) };
+  }
+  return ch;
+});
 
 // Live channel list (metadata only - credentials stay server-side)
 app.get('/api/channels', (req, res) => res.json(channels.publicList()));

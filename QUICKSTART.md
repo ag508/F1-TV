@@ -5,7 +5,7 @@ Get your F1-TV app running in minutes!
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- Xstream IPTV credentials (server, username, password)
+- Channel sources configured in `server/channels.json` (Stremio addon URLs and/or Xstream IPTV accounts)
 - Docker Hub account (for CI/CD setup)
 
 ## 🚀 Option 1: Deploy from Docker Hub (Fastest)
@@ -50,17 +50,13 @@ git clone https://github.com/YOUR_USERNAME/f1-tv.git
 cd f1-tv
 ```
 
-### 2. Configure Xstream Credentials
+### 2. Configure Channels
 
-Edit `client/src/App.jsx` and update:
-
-```javascript
-const XSTREAM_CONFIG = {
-  server: "http://your-server.com:8080",
-  username: "your_username",
-  password: "your_password"
-};
-```
+Edit `server/channels.json` (copy `server/channels.example.json` if starting
+fresh). Stremio addon channels need the addon base URL + channel id; Xstream
+IPTV channels need server/username/password/channelId. See the
+[README](README.md#3-configure-channels-credentials-stay-server-side) for the
+exact formats.
 
 ### 3. Build and Run
 
@@ -257,8 +253,8 @@ docker-compose up -d
 
 ## 🎯 What's Next?
 
-1. ✅ Configure your Xstream IPTV credentials
-2. ✅ Test the streams in your browser
+1. ✅ Configure your channels in `server/channels.json`
+2. ✅ Test the streams in your browser (Live tab → "Check feeds")
 3. ✅ Set up GitHub repository
 4. ✅ Configure GitHub Actions secrets
 5. ✅ Push to GitHub to trigger automatic Docker Hub build

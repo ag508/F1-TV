@@ -30,6 +30,11 @@ const SEGMENT_SECONDS = 2;
 const DVR_SECONDS = Number(process.env.HLS_DVR_SECONDS) || 600;
 const IDLE_TIMEOUT_MS = 60 * 1000;
 const STALL_TIMEOUT_MS = 20 * 1000;
+const DYNAMIC_STALL_TIMEOUT_MS = 30 * 1000;
+// How long the entry playlist request waits for a starting stream before
+// answering 503 + Retry-After. Must stay below the player's manifest timeout
+// (client Player.jsx: 30 s), or the browser aborts before we ever answer.
+const MANIFEST_WAIT_MS = 25 * 1000;
 const FAST_FAIL_MS = 15000;
 const UA = 'VLC/3.0.18 LibVLC/3.0.18';
 
@@ -64,6 +69,22 @@ const SINGLE_KBPS = parseInt(process.env.HLS_1080P_BITRATE || '6000', 10);
 const BROWSER_VIDEO = new Set(['h264', 'avc1']);
 const BROWSER_AUDIO = new Set(['aac']);
 const PROFILES = new Set(['abr', 'auto', '1080p', 'source']);
+
+// FFmpeg args carrying custom HTTP headers for the source (Stremio addons may
+// require a specific User-Agent/Referer on their streams, mirroring what
+// Stremio's streaming server injects via behaviorHints.proxyHeaders.request).
+function headerArgs(headers) {
+  const custom = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (typeof v === 'string' && v) custom[k.toLowerCase() === 'user-agent' ? 'User-Agent' : k] = v;
+  }
+  const ua = custom['User-Agent'] || UA;
+  delete custom['User-Agent'];
+  const args = ['-user_agent', ua];
+  const text = Object.entries(custom).map(([k, v]) => `${k}: ${v}`).join('\r\n');
+  if (text) args.push('-headers', `${text}\r\n`);
+  return args;
+}
 
 const keyframeArgs = ['-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_SECONDS})`];
 const rateArgs = (kbps, idx = '') => [
@@ -111,10 +132,10 @@ detectHardware();
 
 // --- Source probing ---------------------------------------------------------
 
-function probeSource(url, timeoutMs = 12000) {
+function probeSource(url, timeoutMs = 12000, headers = null) {
   return new Promise((resolve) => {
     const proc = spawn('ffprobe', [
-      '-v', 'error', '-user_agent', UA, '-rw_timeout', '10000000',
+      '-v', 'error', ...headerArgs(headers), '-rw_timeout', '10000000',
       '-analyzeduration', '4000000', '-probesize', '5000000',
       '-show_entries', 'stream=codec_type,codec_name,width,height,avg_frame_rate', '-of', 'json', url
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -144,7 +165,11 @@ function probeSource(url, timeoutMs = 12000) {
 //   hw:   'vaapi' (GPU decode + encode) | 'vaapi-swdec' (CPU decode, GPU
 //         encode - for codecs the GPU can't decode) | null (CPU only)
 
-function inputArgs(attempt, sourceUrl) {
+const isHlsUrl = (url) => {
+  try { return /\.m3u8$/i.test(new URL(url).pathname); } catch { return false; }
+};
+
+function inputArgs(attempt, session) {
   const hwIn = attempt.hw === 'vaapi'
     ? ['-hwaccel', 'vaapi', '-hwaccel_device', VAAPI_DEVICE, '-hwaccel_output_format', 'vaapi']
     : attempt.hw === 'vaapi-swdec'
@@ -156,10 +181,17 @@ function inputArgs(attempt, sourceUrl) {
     '-analyzeduration', '5000000', '-probesize', '5000000',
     ...hwIn,
     '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_on_network_error', '1',
+    // Addon/CDN proxies answer transient 502/503s; retry them instead of
+    // letting the very first playlist request kill FFmpeg.
+    '-reconnect_on_http_error', '5xx',
     '-reconnect_delay_max', '10',
     '-rw_timeout', '15000000',
-    '-user_agent', UA,
-    '-i', sourceUrl
+    // HLS sources (addon streams): ride out flaky playlist reloads/segments
+    // instead of exiting after FFmpeg's default 3 reload failures. These are
+    // HLS-demuxer options - FFmpeg rejects them for any other input format.
+    ...(isHlsUrl(session.sourceUrl) ? ['-max_reload', '20', '-m3u8_hold_counters', '20', '-seg_max_retry', '5'] : []),
+    ...headerArgs(session.sourceHeaders),
+    '-i', session.sourceUrl
   ];
 }
 
@@ -189,7 +221,7 @@ function hlsArgs() {
 
 function buildArgs(attempt, session) {
   const dir = session.dir;
-  const input = inputArgs(attempt, session.sourceUrl);
+  const input = inputArgs(attempt, session);
 
   if (attempt.kind === 'copy') {
     return [...input, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy',
@@ -242,20 +274,42 @@ const NETWORK_ERROR = /Connection (refused|reset|timed out)|timed out|Server ret
 
 // --- Sessions -----------------------------------------------------------------
 
-fs.rmSync(ROOT, { recursive: true, force: true });
+// Best-effort removal. On Windows a just-killed FFmpeg can still hold files
+// (ENOTEMPTY/EBUSY); throwing from a timer would crash the whole server.
+function removeDir(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (err) {
+    console.warn(`[HLS] Could not remove ${dir}: ${err.code || err.message}`);
+  }
+}
+
+removeDir(ROOT);
 fs.mkdirSync(ROOT, { recursive: true });
 
 const sessions = new Map(); // id -> HlsSession
 
 class HlsSession {
-  constructor(id, sourceUrl, profile) {
+  // `sourceUrl` is the upstream stream for static sources (IPTV). For dynamic
+  // sources (Stremio addons) pass `resolveSource` instead: an async function
+  // returning `{ url, headers }`, called at every FFmpeg spawn because those
+  // URLs are signed and expiring.
+  constructor(id, sourceUrl, profile, opts = {}) {
     this.id = id;
+    this.key = opts.key || null;               // registry key (for isKeyActive)
     this.sourceUrl = sourceUrl;
+    this.sourceHeaders = null;                 // extra HTTP headers for the source
+    this.resolveSource = opts.resolveSource || null;
+    this.dynamic = !!opts.resolveSource;
     this.profile = PROFILES.has(profile) ? profile : DEFAULT_PROFILE;
     this.dir = path.join(ROOT, id);
     this.lastAccess = Date.now();
     this.restarts = 0;
     this.failures = 0;
+    this.resolveFailures = 0;
+    this.sourceIndex = 0;                      // which addon stream alternative to use
+    this.needFreshSource = false;
+    this.lastProbe = null;                     // last successful source probe
     this.failed = new Set();  // attempt ids that failed fast for encoder/GPU reasons
     this.layout = null;        // 'abr' | 'single' - what's currently on disk
     this.mode = 'starting';
@@ -277,7 +331,16 @@ class HlsSession {
 
     // Single rendition, copying the source when it's already browser-ready H.264 <=1080p
     const singleChain = async () => {
-      const probe = await probeSource(this.sourceUrl);
+      // A probe can fail on a transient upstream error (addon proxies 502 a
+      // lot). Don't let that demote a copy-able source to a CPU transcode:
+      // retry once, then fall back to the last good probe of this channel.
+      // Dynamic sources restart often (signed URLs, flaky proxies): reuse the
+      // probe of the same addon stream so a restart doesn't add ~5 s of gap.
+      let probe = this.dynamic && this.lastProbe ? this.lastProbe : null;
+      if (!probe) probe = await probeSource(this.sourceUrl, 12000, this.sourceHeaders);
+      if (!probe && !this.stopped) probe = await probeSource(this.sourceUrl, 12000, this.sourceHeaders);
+      if (probe) this.lastProbe = probe;
+      else probe = this.lastProbe || null;
       if (probe?.fps) this.sourceFps = probe.fps;
       const canCopy = probe && BROWSER_VIDEO.has(probe.vcodec) && probe.height > 0 && probe.height <= 1088;
       const note = probe ? `(src ${probe.vcodec} ${probe.height}p)` : '';
@@ -299,15 +362,52 @@ class HlsSession {
   }
 
   async spawn() {
+    // Spawn awaits both the addon round-trip and the source probe, so
+    // close/stall handlers can trigger another spawn meanwhile. Each call
+    // bumps a generation that supersedes older in-flight ones at their next
+    // checkpoint - two FFmpeg processes must never share one session directory.
+    const gen = (this.gen = (this.gen || 0) + 1);
     if (this.stopped) return;
+
+    // Dynamic source (Stremio addon): resolve a fresh stream URL for every
+    // spawn. If the addon has nothing playable right now (live channels come
+    // and go with the schedule), back off and try again.
+    if (this.resolveSource) {
+      // After repeated failures on one stream, ask for freshly signed URLs and
+      // move on to the addon's next alternative (wraps around).
+      const fresh = this.needFreshSource;
+      this.needFreshSource = false;
+      const src = await this.resolveSource({ index: this.sourceIndex, fresh });
+      if (this.stopped || gen !== this.gen) return;
+      if (!src?.url) {
+        this.resolveFailures++;
+        this.restarts++;
+        const delay = Math.min(1000 * 2 ** this.resolveFailures, 15000);
+        console.warn(`[HLS ${this.id}] Addon has no playable stream right now, retrying in ${delay}ms`);
+        this.retryTimer = setTimeout(() => this.spawn(), delay);
+        return;
+      }
+      this.resolveFailures = 0;
+      if ((src.index || 0) !== this.sourceIndex) this.lastProbe = null; // different stream: re-probe
+      this.sourceIndex = src.index || 0;
+      if (src.count > 1) console.log(`[HLS ${this.id}] Using addon stream ${this.sourceIndex + 1}/${src.count}`);
+      if (src.url !== this.sourceUrl) this.failed.clear(); // new source: all pipelines are fair game again
+      this.sourceUrl = src.url;
+      this.sourceHeaders = src.headers || null;
+    }
+
     const attempt = await this.nextAttempt();
-    if (this.stopped) return;
+    if (this.stopped || gen !== this.gen) return;
+    // Stall detection counts from this spawn, not from the previous run's
+    // last playlist write (resolve + probe can take longer than the stall
+    // timeout, which used to get every fresh FFmpeg killed immediately).
+    this.spawnedAt = Date.now();
 
     // Switching between the ABR layout (master + variant dirs) and a single
     // playlist: start from a clean directory so stale files can't be served.
     const layout = attempt.kind === 'abr' ? 'abr' : 'single';
     if (this.layout && this.layout !== layout) {
-      fs.rmSync(this.dir, { recursive: true, force: true });
+      removeDir(this.dir);
       fs.mkdirSync(this.dir, { recursive: true });
     }
     this.layout = layout;
@@ -334,12 +434,21 @@ class HlsSession {
       // Fell over immediately for a non-network reason (codec the GPU can't
       // decode, driver problem, unsupported filter...): try the next, lighter
       // pipeline instead of looping on the broken one.
+      if (/matches no streams/.test(log)) {
+        console.warn(`[HLS ${this.id}] Source has no video track (audio-only upstream)`);
+      }
       if (ranFor < FAST_FAIL_MS && !this.killedForStall && !NETWORK_ERROR.test(log)) {
         this.failed.add(attempt.id);
         console.warn(`[HLS ${this.id}] ${this.mode} failed fast - falling back. ${this.lastLog.slice(-2).join(' | ')}`);
       }
       this.killedForStall = false;
       this.failures = ranFor > 30000 ? 0 : this.failures + 1;
+      // Dynamic source keeps dying early: its signed URL may have gone bad or
+      // that upstream is down. Re-resolve fresh and try the next alternative.
+      if (this.dynamic && this.failures >= 2) {
+        this.needFreshSource = true;
+        this.sourceIndex++;
+      }
       const delay = Math.min(1000 * 2 ** this.failures, 15000);
       console.warn(`[HLS ${this.id}] FFmpeg exited (${code}), restarting in ${delay}ms. ${this.lastLog.slice(-2).join(' | ')}`);
       this.restarts++;
@@ -355,8 +464,10 @@ class HlsSession {
     if (!this.proc || !this.watchFile) return;
     let mtime = 0;
     try { mtime = fs.statSync(this.watchFile).mtimeMs; } catch { mtime = this.createdAt || 0; }
-    const since = Date.now() - Math.max(mtime, this.lastSpawnCheck || 0);
-    if (since > STALL_TIMEOUT_MS) {
+    const since = Date.now() - Math.max(mtime, this.spawnedAt || 0, this.lastSpawnCheck || 0);
+    // Addon streams usually carry ~10 s upstream segments (data arrives in
+    // bursts) behind proxies that need retries: allow them more slack.
+    if (since > (this.dynamic ? DYNAMIC_STALL_TIMEOUT_MS : STALL_TIMEOUT_MS)) {
       console.warn(`[HLS ${this.id}] No new segments for ${Math.round(since / 1000)}s, restarting FFmpeg`);
       this.lastSpawnCheck = Date.now();
       this.killedForStall = true;
@@ -387,12 +498,13 @@ class HlsSession {
 
   stop() {
     this.stopped = true;
+    clearTimeout(this.retryTimer);
     this.proc?.kill('SIGKILL');
-    setTimeout(() => fs.rmSync(this.dir, { recursive: true, force: true }), 1000);
+    setTimeout(() => removeDir(this.dir), 1000);
   }
 
   info() {
-    return { id: this.id, profile: this.profile, mode: this.mode, running: !!this.proc, restarts: this.restarts };
+    return { id: this.id, key: this.key, dynamic: this.dynamic, profile: this.profile, mode: this.mode, running: !!this.proc, restarts: this.restarts };
   }
 }
 
@@ -400,12 +512,14 @@ function sessionId(key) {
   return crypto.createHash('sha1').update(key).digest('hex').slice(0, 16);
 }
 
-function getSession({ server, username, password, channelId, profile }) {
-  const id = sessionId(`${server}|${username}|${channelId}|${profile}`);
+function getSession({ server, username, password, channelId, profile, sessionKey, key, resolveSource }) {
+  const id = sessionKey
+    ? sessionId(`${sessionKey}|${profile}`)
+    : sessionId(`${server}|${username}|${channelId}|${profile}`);
   let session = sessions.get(id);
   if (!session) {
-    const sourceUrl = `${server}/live/${username}/${password}/${channelId}.ts`;
-    session = new HlsSession(id, sourceUrl, profile);
+    const sourceUrl = resolveSource ? null : `${server}/live/${username}/${password}/${channelId}.ts`;
+    session = new HlsSession(id, sourceUrl, profile, { key, resolveSource });
     session.createdAt = Date.now();
     sessions.set(id, session);
   }
@@ -415,7 +529,16 @@ function getSession({ server, username, password, channelId, profile }) {
 
 function isChannelActive(server, username, channelId) {
   for (const s of sessions.values()) {
-    if (s.proc && s.sourceUrl.startsWith(`${server}/live/${username}/`) && s.sourceUrl.endsWith(`/${channelId}.ts`)) return true;
+    if (s.proc && s.sourceUrl && s.sourceUrl.startsWith(`${server}/live/${username}/`) && s.sourceUrl.endsWith(`/${channelId}.ts`)) return true;
+  }
+  return false;
+}
+
+// Is the channel with this registry key currently being restreamed? Works for
+// dynamic (addon) sessions whose source URL isn't a stable IPTV address.
+function isKeyActive(key) {
+  for (const s of sessions.values()) {
+    if (s.proc && s.key === key) return true;
   }
   return false;
 }
@@ -449,14 +572,24 @@ function registerRoutes(app, resolveChannel = () => null) {
   app.get('/hls/:channel/index.m3u8', async (req, res) => {
     const known = resolveChannel(req.params.channel);
     const profile = known?.profile || req.query.profile || DEFAULT_PROFILE;
-    const server = known ? known.server : req.query.server;
-    const username = known ? known.username : req.query.username;
-    const password = known ? known.password : req.query.password;
-    const channelId = known ? known.channelId : req.params.channel;
-    if (!server || !username || !password) return res.status(400).send('Unknown channel, and no server/username/password supplied');
 
-    const session = getSession({ server, username, password, channelId, profile });
-    const text = await session.waitForPlaylist();
+    let session;
+    if (known?.resolveSource) {
+      // Dynamic source (Stremio addon): the upstream URL is resolved inside
+      // the session at FFmpeg spawn time, so nothing sensitive is needed here.
+      session = getSession({ sessionKey: `dynamic:${known.key}`, key: known.key, profile, resolveSource: known.resolveSource });
+    } else {
+      const server = known ? known.server : req.query.server;
+      const username = known ? known.username : req.query.username;
+      const password = known ? known.password : req.query.password;
+      const channelId = known ? known.channelId : req.params.channel;
+      if (!server || !username || !password) return res.status(400).send('Unknown channel, and no server/username/password supplied');
+      session = getSession({ server, username, password, channelId, profile });
+    }
+
+    // Answer 503 before the player's own manifest timeout; it retries, and the
+    // same session keeps warming up (dynamic sources need the addon round-trip).
+    const text = await session.waitForPlaylist(MANIFEST_WAIT_MS);
     if (!text) return res.status(503).set('Retry-After', '2').send('Stream is starting, retry shortly');
 
     // Every URI (variant playlist or segment) is served from the session's
@@ -498,4 +631,4 @@ function registerRoutes(app, resolveChannel = () => null) {
   }));
 }
 
-module.exports = { registerRoutes, isChannelActive };
+module.exports = { registerRoutes, isChannelActive, isKeyActive };

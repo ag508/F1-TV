@@ -14,14 +14,31 @@
  *   4. the built-in placeholder below          (no real credentials)
  *
  * Copy server/channels.example.json to server/channels.json and fill in your
- * own provider lines to run the app. Each entry:
+ * own provider lines to run the app. Two kinds of entries:
+ *
+ * IPTV (Xstream):
  *   { key, title, quality, english, channelId, server, username, password,
  *     profile? }
+ * Use one account per entry, each with a free connection slot, so the parallel
+ * status check never hits a provider's per-account limit.
+ *
+ * Stremio addon (live TV addons):
+ *   { key, title, quality, english, type: 'stremio', addon, channelId,
+ *     profile? }
+ * `addon` is the addon base URL (manifest.json sits at `<addon>/manifest.json`;
+ * configuration the addon needs must be part of that URL, e.g. PenguPlay's
+ * URL-encoded JSON path). `channelId` is the addon's meta id. The stream URL
+ * is resolved from the addon at FFmpeg spawn time (Stremio stream URLs are
+ * signed and expiring), so nothing is stored here. See server/stremio.js.
+ * Optional `fallbacks`: other addon channel ids carrying the same broadcast,
+ * either strings (same addon) or { addon, channelId } (another addon). Their
+ * streams join one pool that playback rotates through when a stream fails -
+ * live addons list one channel under many ids and single ids go dark often.
+ *
  * `profile` is optional: 'auto' (default) copies the source when it is already
  * browser-playable H.264 <=1080p and transcodes to 1080p H.264 otherwise;
  * 'source' always copies untouched (e.g. to keep a 4K feed native); '1080p'
- * always transcodes. Use one account per entry, each with a free connection
- * slot, so the parallel status check never hits a provider's per-account limit.
+ * always transcodes.
  */
 
 const fs = require('fs');

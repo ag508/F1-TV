@@ -1,7 +1,31 @@
 [
   {
     "key": "f1-primary",
-    "title": "Sky Sports F1 FHD (Primary)",
+    "title": "Sky Sports F1 4K (Stremio addon, Primary)",
+    "quality": "4K→1080p",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://my-stremio-addon.example/u/CONFIGPATH",
+    "channelId": "addon-specific-channel-id",
+    "profile": "auto",
+    "fallbacks": [
+      "another-channel-id-on-the-same-addon",
+      { "addon": "https://other-stremio-addon.example/CONFIG", "channelId": "channel-id-on-that-addon" }
+    ]
+  },
+  {
+    "key": "f1-secondary1",
+    "title": "UK: Sky Sports F1 (Stremio addon, Secondary 1)",
+    "quality": "720p50",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://my-stremio-addon.example/u/CONFIGPATH",
+    "channelId": "addon-specific-channel-id",
+    "profile": "auto"
+  },
+  {
+    "key": "f1-backup1",
+    "title": "UK: Sky Sports F1 FHD (IPTV Backup 1)",
     "quality": "1080p50",
     "english": true,
     "server": "http://your-provider.example:8080",
@@ -10,18 +34,8 @@
     "channelId": 12345
   },
   {
-    "key": "f1-backup1",
-    "title": "UK: Sky Sports F1 FHD (Backup 1)",
-    "quality": "1080p",
-    "english": true,
-    "server": "http://another-provider.example:8080",
-    "username": "YOUR_USERNAME",
-    "password": "YOUR_PASSWORD",
-    "channelId": 67890
-  },
-  {
     "key": "f1-backup2",
-    "title": "Sky Sports F1 4K (Backup 2)",
+    "title": "Sky Sports F1 4K (IPTV Backup 2)",
     "quality": "4K",
     "english": true,
     "profile": "source",

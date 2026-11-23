@@ -1,18 +1,160 @@
 [
   {
     "key": "f1-primary",
-    "title": "Sky Sports F1 FHD (Primary)",
-    "quality": "1080p50",
+    "title": "Sky Sports F1 4K (Plavio Live, Primary)",
+    "quality": "4K→1080p",
     "english": true,
-    "verified": true,
-    "server": "http://goldenfrance.xyz:80",
-    "username": "6Y5M5AKFQ1ZWADQ",
-    "password": "rVcDYvPKme",
-    "channelId": 17289
+    "type": "stremio",
+    "addon": "https://addon.plavio.site/u/zKbmJGqNFhvtJkCDGIlc7K",
+    "channelId": "plaviohdtv-sportsfree-leaf:4k-sky-sports-f13334",
+    "profile": "auto",
+    "fallbacks": [
+      {
+        "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+        "channelId": "pp-live:pengutv~p10b1fl3u9mv0r"
+      },
+      {
+        "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+        "channelId": "pp-live:pengutv~pqeuhg51nzdrvf"
+      },
+      {
+        "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+        "channelId": "pp-live:pengutv~p1iyn4fg17vd3gm"
+      },
+      {
+        "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+        "channelId": "pp-live:pengutv~p1bo1fq31ne8hgl"
+      }
+    ]
+  },
+  {
+    "key": "f1-secondary1",
+    "title": "UK: Sky Sports F1 50FPS (PenguPlay, Secondary 1)",
+    "quality": "720p50",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1bo1fq31ne8hgl",
+    "profile": "auto"
+  },
+  {
+    "key": "f1-secondary2",
+    "title": "UK: Sky Sports F1 ULTRA 4K (PenguPlay, Secondary 2)",
+    "quality": "4K→1080p",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1oawxy71sukf73",
+    "profile": "auto"
+  },
+  {
+    "key": "f1-secondary3",
+    "title": "UK: Sky Sports F1 1 (PenguPlay, Secondary 3)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1n7ehudd61vo7",
+    "profile": "auto",
+    "fallbacks": [
+      "pp-live:pengutv~p10b1fl3u9mv0r",
+      "pp-live:pengutv~pqeuhg51nzdrvf",
+      "pp-live:pengutv~p1iyn4fg17vd3gm"
+    ]
+  },
+  {
+    "key": "f1-secondary4",
+    "title": "UK: Sky Sports F1 2 (PenguPlay, Secondary 4)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1tqmm28f2gdx2",
+    "profile": "auto",
+    "fallbacks": [
+      "pp-live:pengutv~p10b1fl3u9mv0r",
+      "pp-live:pengutv~pqeuhg51nzdrvf",
+      "pp-live:pengutv~p1iyn4fg17vd3gm"
+    ]
+  },
+  {
+    "key": "f1-secondary5",
+    "title": "UK: Sky Sports F1 3 (PenguPlay, Secondary 5)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~ptrrhx7by9ufp",
+    "profile": "auto",
+    "fallbacks": [
+      "pp-live:pengutv~p10b1fl3u9mv0r",
+      "pp-live:pengutv~pqeuhg51nzdrvf",
+      "pp-live:pengutv~p1iyn4fg17vd3gm"
+    ]
+  },
+  {
+    "key": "f1-secondary6",
+    "title": "UK: Sky Sports F1 4 (PenguPlay, Secondary 6)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1km4vy51dsjylb",
+    "profile": "auto",
+    "fallbacks": [
+      "pp-live:pengutv~p10b1fl3u9mv0r",
+      "pp-live:pengutv~pqeuhg51nzdrvf",
+      "pp-live:pengutv~p1iyn4fg17vd3gm"
+    ]
+  },
+  {
+    "key": "f1-secondary7",
+    "title": "UK: Sky Sports F1 5 (PenguPlay, Secondary 7)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1l6soew1foyncu",
+    "profile": "auto",
+    "fallbacks": [
+      "pp-live:pengutv~p10b1fl3u9mv0r",
+      "pp-live:pengutv~pqeuhg51nzdrvf",
+      "pp-live:pengutv~p1iyn4fg17vd3gm"
+    ]
+  },
+  {
+    "key": "f1-secondary8",
+    "title": "UK: Sky Sports F1 NOWTV (PenguPlay, Secondary 8)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:pengutv~p1o1jre01bdhv2m",
+    "profile": "auto"
+  },
+  {
+    "key": "f1-secondary9",
+    "title": "Sky Sports F1 UK (PenguPlay DaddyLive, Secondary 9)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:thedaddy~60",
+    "profile": "auto"
+  },
+  {
+    "key": "f1-secondary10",
+    "title": "UK: Sky F1 (PenguPlay AK47, Secondary 10)",
+    "quality": "Auto",
+    "english": true,
+    "type": "stremio",
+    "addon": "https://pengu.uk/%7B%22auth_token%22%3A%22xCbfMpZcKlt5mAN4pYxE-q1PLYKn4jAMv8FBioFX--Y%22%2C%22source_live-sports%22%3A%22checked%22%7D",
+    "channelId": "pp-live:aksports~c78ac73122b38e955a38aca27692f83144cc7be5c",
+    "profile": "auto"
   },
   {
     "key": "f1-backup1",
-    "title": "UK: Sky Sports F1 FHD (Backup 1)",
+    "title": "UK: Sky Sports F1 FHD (IPTV Backup 1)",
     "quality": "1080p50",
     "english": true,
     "verified": true,
@@ -23,29 +165,7 @@
   },
   {
     "key": "f1-backup2",
-    "title": "Sky Sports F1 FHD (Backup 2)",
-    "quality": "1080p50",
-    "english": true,
-    "verified": true,
-    "server": "http://speedmel.net:80",
-    "username": "T5V6LCA59GN6JWE",
-    "password": "D7a0CzVHME",
-    "channelId": 17289
-  },
-  {
-    "key": "f1-backup3",
-    "title": "Sky Sports F1 4K (Backup 3)",
-    "quality": "4K→1080p",
-    "english": true,
-    "verified": true,
-    "server": "http://watchnowone.cc:80",
-    "username": "176A4DD22212974",
-    "password": "eKHQ1EV35a",
-    "channelId": 1281428
-  },
-  {
-    "key": "f1-backup4",
-    "title": "F1 TV (Backup 4)",
+    "title": "F1 TV (IPTV Backup 2)",
     "quality": "1080p",
     "english": true,
     "verified": true,
@@ -55,8 +175,8 @@
     "channelId": 300474
   },
   {
-    "key": "f1-backup5",
-    "title": "F1 TV Race Feed (Backup 5)",
+    "key": "f1-backup3",
+    "title": "F1 TV Race Feed (IPTV Backup 3)",
     "quality": "1080p",
     "english": true,
     "verified": true,
@@ -66,8 +186,8 @@
     "channelId": 41358
   },
   {
-    "key": "f1-backup6",
-    "title": "F1 TV Race — ENG commentary (Backup 6)",
+    "key": "f1-backup4",
+    "title": "F1 TV Race — ENG commentary (IPTV Backup 4)",
     "quality": "1080p",
     "english": true,
     "verified": true,
@@ -77,8 +197,8 @@
     "channelId": 41358
   },
   {
-    "key": "f1-apple1",
-    "title": "Apple TV F1 (Backup 7)",
+    "key": "f1-backup5",
+    "title": "Apple TV F1 (IPTV Backup 5)",
     "quality": "720p",
     "english": true,
     "verified": true,
@@ -86,27 +206,5 @@
     "username": "sanverannetunahan859693",
     "password": "nXP5xkA",
     "channelId": 170761
-  },
-  {
-    "key": "f1-apple2",
-    "title": "Apple TV F1 (Backup 8)",
-    "quality": "1080p",
-    "english": true,
-    "verified": false,
-    "server": "http://goldenfrance.xyz:80",
-    "username": "4RSMHE3F8SW1S1Q",
-    "password": "QlTXv8JABn",
-    "channelId": 1412770
-  },
-  {
-    "key": "f1-apple3",
-    "title": "Apple TV F1 (Backup 9)",
-    "quality": "720p",
-    "english": true,
-    "verified": true,
-    "server": "http://matrix8ktrex.xyz:80",
-    "username": "54GY4U84TDP4RK3",
-    "password": "ZDypkAVuSZ",
-    "channelId": 1412770
   }
 ]

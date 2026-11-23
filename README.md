@@ -70,20 +70,46 @@ loads the channel list, in this order:
 4. a built-in placeholder (no real credentials)
 
 To set up: copy [server/channels.example.json](server/channels.example.json) to
-`server/channels.json` and fill in your own provider lines. Each entry:
+`server/channels.json` and fill in your own provider lines. Two kinds of entries:
+
+**Xstream IPTV account:**
 
 ```json
-{ "key": "f1-primary", "title": "Sky Sports F1 FHD", "quality": "1080p50",
+{ "key": "f1-backup1", "title": "Sky Sports F1 FHD", "quality": "1080p50",
   "english": true, "profile": "auto",
   "server": "http://your-provider:8080", "username": "USER", "password": "PASS",
   "channelId": 12345 }
 ```
 
 Use one account per entry (each with a free connection slot) so the parallel
-"Check Status" never hits a provider's per-account connection limit. `profile`
-is optional: `auto` (default) copies browser-ready H.264 and transcodes HEVC to
-1080p; `source` keeps the source untouched (e.g. a native 4K feed); `1080p`
-always transcodes.
+"Check Status" never hits a provider's per-account connection limit.
+
+**Stremio live-TV addon** (Plavio Live, PenguPlay, …):
+
+```json
+{ "key": "f1-primary", "title": "Sky Sports F1 4K (Primary)", "quality": "4K→1080p",
+  "english": true, "type": "stremio", "profile": "auto",
+  "addon": "https://addon.example/u/CONFIGPATH",
+  "channelId": "addon-channel-id" }
+```
+
+`addon` is the addon base URL (with any configuration the addon requires baked
+into it, e.g. PenguPlay's URL-encoded JSON path — its Live TV source must be
+enabled with `"source_live-sports":"checked"` in that JSON). `channelId` is the
+channel's meta id from the addon's catalog (search it with
+`/catalog/tv/{catalogId}/search=f1.json`). Streams are resolved through the
+addon protocol at FFmpeg spawn time — Stremio stream URLs are signed and
+expiring, so nothing is stored. Non-playable entries are filtered, streams are
+ordered best-first, and `behaviorHints.proxyHeaders.request` are injected into
+FFmpeg, mirroring Stremio's own streaming-server behavior (see
+[server/stremio.js](server/stremio.js)). A channel that currently has no stream
+(e.g. outside the live session) reports `OFFLINE` and the player retries until
+the addon starts serving one.
+
+`profile` is optional: `auto` (default) copies browser-ready H.264 and
+transcodes HEVC/4K to 1080p; `source` keeps the source untouched (e.g. a native
+4K feed); `1080p` always transcodes; `abr` (the server-wide default) serves an
+adaptive ladder.
 
 > ⚠️ **Security:** `server/channels.json` is committed so CI can build a
 > self-contained Docker image. That means your provider credentials live in the
@@ -323,11 +349,9 @@ F1-TV/
 
 ## Available Streams
 
-- **Sky Sports F1 HD** - UK broadcast
-- **Sky Sport F1 FHD** - Full HD feed
-- **Sky F1 SD** - Standard definition
-- **ES - Dazn F1** - Spanish DAZN
-- **DE: Sky Sport F1 HD** - German Sky Sports
+- **Sky Sports F1 4K (Plavio Live)** - primary source, via the Plavio Live Stremio addon
+- **Sky Sports F1 UK ×10 (PenguPlay)** - UK English feeds (50FPS, ULTRA 4K, mirrors 1-5, NOWTV, DaddyLive, AK47) via the PenguPlay Stremio addon
+- **IPTV backups** - Xstream accounts (Sky Sports F1 FHD, F1 TV feeds, Apple TV F1)
 
 ## API Endpoints
 
@@ -335,7 +359,7 @@ F1-TV/
 - `GET /api/channels` - Live channel list (metadata only: key, title, quality; **no credentials**)
 - `GET /restream/:channelId` - FFmpeg restream endpoint for IPTV channels (MPEG-TS)
 - `GET /hls/:channel/index.m3u8` - HLS restream with a DVR buffer (auto-restarting FFmpeg). `:channel` is a registry key (credentials resolved server-side) or a raw channelId with `?server=&username=&password=`. `profile=auto` (default) copies the source when it is already browser-playable H.264 ≤1080p and transcodes to 1080p H.264 only when it is HEVC/UHD; `profile=1080p` always transcodes; `profile=source` always copies
-- `GET /api/stream-health?key=` - Account + channel check by registry key (`probe=1` also reports the source codec/resolution); raw `server/username/password/channelId` also accepted
+- `GET /api/stream-health?key=` - Account + channel check by registry key (`probe=1` also reports the source codec/resolution); raw `server/username/password/channelId` also accepted. Stremio addon channels are checked by resolving a stream through the addon instead of an account query.
 - `GET /api/live/status` - Current F1 session and its live status (from F1 live timing)
 - `GET /api/live/stream` - Server-Sent Events: live timing snapshot (1/s) and car positions (4/s)
 - `GET /api/live/circuit?key=&year=` - Circuit outline (MultiViewer, OpenF1 fallback)
@@ -359,6 +383,7 @@ from the live mini-sector timing.
 - `NODE_ENV` - Environment mode (production/development)
 - `PORT` - Server port (default: 3001)
 - `F1TV_TOKEN` - Optional F1 TV subscription token, enables GPS positions + car telemetry
+- `STREMIO_TIMEOUT` - Timeout (ms) for Stremio addon stream resolution (default 25000)
 - `LIVE_TIMING_DISABLED=1` - Don't connect to F1 live timing
 - `LIVE_REPLAY` - Replay an archived session through the live pipeline for testing, e.g. `2026/2026-10-04_Bahrain_Grand_Prix/2026-10-04_Race/` (see `https://livetiming.formula1.com/static/2026/Index.json`)
 - `LIVE_REPLAY_START` - Offset into the replay (`HH:MM:SS`, default: just before the start)

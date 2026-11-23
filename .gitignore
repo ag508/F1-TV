@@ -82,3 +82,6 @@ client/src/assets/fonts/*
 
 # Server-side outline cache
 server/cache/
+
+# Account checker report (contains account status, not for the repo)
+server/account-check-report.json

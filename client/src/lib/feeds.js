@@ -20,7 +20,7 @@ export function useFeedHealth(channels, enabled) {
     await Promise.allSettled(channels.map(async (channel) => {
       let result;
       try {
-        const res = await fetch(`${apiBase()}/api/stream-health?key=${encodeURIComponent(channel.key)}&probe=1`, { signal: AbortSignal.timeout(45000) });
+        const res = await fetch(`${apiBase()}/api/stream-health?key=${encodeURIComponent(channel.key)}&probe=1`, { signal: AbortSignal.timeout(90000) });
         result = res.ok ? await res.json() : { status: 'UNKNOWN', reason: `Health check returned ${res.status}` };
       } catch (err) {
         result = { status: 'UNKNOWN', reason: err.name === 'TimeoutError' ? 'Check timed out after 45 s' : 'Server not reachable' };
