@@ -124,9 +124,7 @@ const WeekendHero = ({ race, weekend, feed, circuitKey, total, now, onWatch, onL
       </div>
 
       <div className="relative grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-6 lg:gap-10 border-t border-graphite/60 bg-night/40 px-5 sm:px-8 lg:px-10 py-6">
-        <div className="min-w-0 overflow-x-auto -mx-1 px-1">
-          <div className="min-w-[420px]"><SessionTimeline sessions={sessions} /></div>
-        </div>
+        <div className="min-w-0"><SessionTimeline sessions={sessions} /></div>
         {forecast?.length ? <WeatherStrip days={forecast} /> : (
           <p className="text-sm text-steel self-center">The circuit forecast appears about two weeks before the race.</p>
         )}

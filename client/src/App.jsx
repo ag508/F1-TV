@@ -127,7 +127,7 @@ const CHEQUER = {
 const Footer = ({ go, weekends, heroRace }) => {
   const done = weekends.filter(w => w.state.finished).length;
   return (
-    <footer className="relative mt-24 overflow-hidden bg-carbon border-t border-graphite/60 pb-16 sm:pb-0">
+    <footer className="relative mt-24 overflow-hidden bg-carbon border-t border-graphite/60 clear-bottom-nav">
       {/* The flag runs left to right: one pattern repeat (22px) per loop, moved
           with a transform so it never repaints */}
       <div aria-hidden="true" className="h-[22px] overflow-hidden opacity-90" style={CHEQUER_MASK}>

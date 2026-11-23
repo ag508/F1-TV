@@ -61,10 +61,16 @@ export const SessionTimeline = ({ sessions }) => {
               </span>
               {i < sessions.length - 1 && <span className={`h-0.5 flex-1 mx-1 rounded-full ${passed ? 'bg-steel' : 'bg-graphite'}`} />}
             </div>
-            <div className={`mt-2 pr-1 text-xs font-bold leading-tight ${s.phase === 'live' ? 'text-f1' : passed ? 'text-steel' : 'text-chalk'}`}>{s.short}</div>
-            <div className="tnum text-[11px] leading-tight mt-0.5 text-steel">
+            <div title={s.short} className={`mt-2 pr-1 text-xs font-bold leading-tight truncate ${s.phase === 'live' ? 'text-f1' : passed ? 'text-steel' : 'text-chalk'}`}>{s.short}</div>
+            {/* Day and time stack on phones so five sessions fit the width
+                without a horizontal scroll; side by side from sm up */}
+            <div className="tnum text-[11px] leading-tight mt-0.5 pr-1 text-steel">
               {s.phase === 'live' ? 'Live now' : (
-                <>{s.start.toLocaleDateString(undefined, { weekday: 'short' })} {s.start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</>
+                <>
+                  <span className="block sm:inline">{s.start.toLocaleDateString(undefined, { weekday: 'short' })}</span>{' '}
+                  {/* may wrap at its space ("02:30" / "PM") on the narrowest phones */}
+                  <span className="block sm:inline">{s.start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                </>
               )}
             </div>
           </li>

@@ -106,6 +106,12 @@
 
   /* Mobile bottom navigation clears the home indicator */
   .safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+  /* Room for that bar under the last content on phones: its content height
+     (~3.7rem: pills + icon + label) plus the same safe-area padding it uses,
+     so the footer is never hidden behind it on notched/home-indicator phones */
+  .clear-bottom-nav { padding-bottom: calc(4rem + max(0.5rem, env(safe-area-inset-bottom))); }
+  @media (min-width: 640px) { .clear-bottom-nav { padding-bottom: 0; } }
 }
 
 @keyframes live-ring {
